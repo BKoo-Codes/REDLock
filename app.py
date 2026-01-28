@@ -52,6 +52,13 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# Helper function to parse list inputs
+def parse_int_list(input_str, default):
+    try:
+        return [int(x.strip()) for x in input_str.split(',')]
+    except:
+        return default
+
 # Sidebar - Configuration
 with st.sidebar:
     st.image("https://img.icons8.com/color/96/000000/dna-helix.png", width=80)
@@ -61,10 +68,32 @@ with st.sidebar:
     target_name = st.text_input("Target miRNA Name", value="hsa-miR-21-5p", help="Name of the target miRNA")
     target_seq = st.text_area("Target miRNA Sequence (RNA/DNA)", value="UAGCUUAUCAGACUGAUGUUGA", height=100, help="Sequence of the target miRNA. U will be automatically converted to T.")
 
-    st.markdown("### ⚙️ Design Options")
+    st.markdown("### 🧬 Structure Design")
+    spacer_len_str = st.text_input("Spacer Lengths (nt)", value="16, 15, 17", help="Comma-separated list of prioritized lengths.")
+    cas12a_len_str = st.text_input("Cas12a Core Lengths (nt)", value="20, 21, 22", help="Comma-separated list of prioritized lengths.")
+    
+    gc_spacer = st.slider("Spacer GC Content (%)", 0, 100, (35, 60))
+    gc_cas = st.slider("Cas12a GC Content (%)", 0, 100, (35, 65))
+    
+    pool_samples = st.select_slider("Pool Sample Size", options=[10000, 50000, 100000, 200000, 500000, 1000000], value=200000, help="Number of random sequences to generate for initial screening. Higher = better diversity but slower.")
+
+    st.markdown("### ⚙️ General Options")
     num_candidates = st.slider("Number of Candidates", min_value=1, max_value=50, value=10, help="Number of candidates to generate and validate.")
     dg_threshold = st.number_input("Delta G Threshold (kcal/mol)", value=-3.5, step=0.5, help="Stability threshold. Higher values (less negative) are less stable/better.")
     
+    # Advanced Settings Expander
+    with st.expander("🛠️ Advanced Filters (Expert)", expanded=False):
+        st.markdown("**Constraint Scores (Lower = Stricter)**")
+        max_homopolymer = st.number_input("Max Homopolymer Length", 3, 10, 4, help="Maximum allowed repetition of a single base (e.g., AAAAA).")
+        score_hairpin_global = st.number_input("Global Hairpin Score", 1, 10, 6, help="Self-complementarity score for the full padlock.")
+        score_hairpin_module = st.number_input("Module Hairpin Score", 1, 10, 5, help="Self-complementarity score for Spacer/Cas12a parts.")
+        
+        st.markdown("---")
+        st.markdown("**Cross-Hybridization Scores**")
+        score_cross_module = st.number_input("Module-Module Cross-Hyb", 1, 10, 5, help="Interaction between Spacer and Cas12a core.")
+        score_cross_mirna = st.number_input("miRNA Arm Cross-Hyb", 1, 10, 3, help="Interaction with miRNA binding arms (Critical).")
+        score_cross_global = st.number_input("Global Cross-Hyb", 1, 10, 6, help="General non-specific interaction score.")
+
     st.markdown("### 🛡️ Validation")
     skip_blast = st.checkbox("Skip NCBI BLAST (Faster)", value=False, help="Skip the time-consuming NCBI BLAST step.")
     rnafold_path = st.text_input("RNAfold Path (Optional)", value="", help="Full path to RNAfold executable if not in system PATH.")
@@ -83,17 +112,49 @@ if run_btn:
     if not target_seq:
         st.error("Please enter a target sequence.")
     else:
+        # Parse inputs
+        spacer_length = parse_int_list(spacer_len_str, [16, 15, 17])
+        cas12a_length = parse_int_list(cas12a_len_str, [20, 21, 22])
+        
+        # Construct Validation Params
+        custom_validation_params = {
+            "has_long_homopolymer(padlock_seq)": max_homopolymer,
+            "has_self_complementarity_global(padlock_seq)": score_hairpin_global,
+            "has_tandem_repeat(padlock_seq)": 5, # Fixed for now or add option
+            
+            "has_self_complementarity(spacer)": score_hairpin_module,
+            "has_self_complementarity(cas12a_core)": score_hairpin_module,
+
+            "has_cross_hybridization(spacer, cas12a_core)": score_cross_module,
+            "has_cross_hybridization(spacer_rc, cas12a_core)": score_cross_module,
+            
+            "has_cross_hybridization(mirna_left_rc, spacer)": score_cross_mirna,
+            "has_cross_hybridization(mirna_right_rc, cas12a_core)": score_cross_mirna,
+
+            "has_cross_hybridization(padlock_seq, spacer)": score_cross_global,
+            "has_cross_hybridization(padlock_seq, cas12a_core)": score_cross_global,
+            "has_cross_hybridization(padlock_seq, mirna_left_rc)": score_cross_global,
+            "has_cross_hybridization(padlock_seq, mirna_right_rc)": score_cross_global,
+            
+            "has_cross_hybridization(padlock_seq_rc, mirna_seq)": score_cross_global,
+        }
+
         with st.status("Running Design Pipeline...", expanded=True) as status:
             # Step 1: Pools
-            st.write("Generating sequence pools...")
-            spacer_length = [16, 15, 17]
-            cas12a_length = [20, 21, 22]
+            st.write(f"Generating sequence pools (Size: {pool_samples}, Spacer GC: {gc_spacer}%, Cas12a GC: {gc_cas}%)...")
             
-            # Use st.cache_data to speed up pool generation if possible, 
-            # but for now we run it directly or rely on pipeline's pickle logic.
-            # We need to suppress print outputs from the pipeline or redirect them.
             try:
-                spacer_pools, cas12a_pools = generate_pool(spacer_length, cas12a_length)
+                # Force new pool generation if custom params are likely (simple heuristic: always regen for safety in GUI mode)
+                # Or use a different filename based on hash. For now, we reuse the function but pass a temp filename or None to avoid overwriting default cache if desired.
+                # Actually, overwriting is fine as it reflects user's latest choice.
+                spacer_pools, cas12a_pools = generate_pool(
+                    spacer_length, 
+                    cas12a_length, 
+                    pool_file="custom_pools.pkl", # Use a separate file for GUI custom runs
+                    num_samples=pool_samples,
+                    gc_range_spacer=gc_spacer,
+                    gc_range_cas=gc_cas
+                )
                 st.success("✅ Sequence pools initialized.")
             except Exception as e:
                 st.error(f"Failed to generate pools: {e}")
@@ -101,18 +162,19 @@ if run_btn:
                 st.stop()
 
             # Step 2: Assembly
-            st.write("Assembling candidates...")
+            st.write("Assembling candidates with custom filters...")
             try:
                 candidates = assemble_and_filter_padlocks(
                     target_name, 
                     target_seq, 
                     spacer_pools, 
                     cas12a_pools, 
-                    num_to_generate=num_candidates
+                    num_to_generate=num_candidates,
+                    validation_params=custom_validation_params
                 )
                 
                 if not candidates:
-                    st.error("No valid candidates generated. Try adjusting filters or pool sizes.")
+                    st.error("No valid candidates generated. Try relaxing filters (increase scores) or increasing pool size.")
                     status.update(label="Failed at Assembly", state="error")
                     st.stop()
                 
@@ -145,45 +207,8 @@ if run_btn:
             final_candidates_list = []
             if not skip_blast:
                 st.write("Running NCBI BLAST validation (this may take a while)...")
-                progress_bar = st.progress(0)
-                
-                # We need to adapt run_blast_validation to work with streamlit progress if possible
-                # For now, we just run it. Ideally, we would rewrite the loop here to update UI.
-                # Let's adapt the loop manually here for better UI experience.
-                
-                passed_candidates = []
-                target_count = num_candidates # Try to validate up to the requested number
-                
-                total_to_check = len(sorted_df)
-                
-                for idx, row in sorted_df.iterrows():
-                    candidate_id = row.get('Candidate ID', idx + 1)
-                    st.write(f"Checking Candidate #{candidate_id}...")
-                    
-                    # Basic checks
-                    is_safe = True
-                    reasons = []
-                    
-                    # Cas12a Check
-                    cas_hits = run_blast_validation(pd.DataFrame([row]), target_count=1) # Re-using function hackily or rewrite?
-                    # The imported run_blast_validation does the whole loop and printing. 
-                    # It's better to call the lower-level functions if we want granular control, 
-                    # but `run_blast_validation` in pipeline.py prints to stdout.
-                    # Let's just use the function as is for simplicity, capturing stdout is hard in streamlit easily.
-                    # Actually, let's trust the user to wait or see the logs in terminal. 
-                    # For a better UI, we should refactor pipeline.py to yield results. 
-                    
-                    # To keep it simple and robust:
-                    final_candidates_list = run_blast_validation(sorted_df) # This prints to console
-                    break # We just run it once
-                
-                # Since run_blast_validation returns a list of approved candidates (dicts/series)
-                # But wait, run_blast_validation in pipeline.py returns `passed_candidates` list.
-                # And it handles the loop.
                 
                 # Re-importing to ensure we use the function correctly
-                # In pipeline.py: def run_blast_validation(sorted_results, target_count=5): return passed_candidates
-                
                 final_candidates_list = run_blast_validation(sorted_df, target_count=num_candidates)
                 
                 if not final_candidates_list:

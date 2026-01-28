@@ -8,10 +8,13 @@ from .assembler import find_best_split, validate_padlocks, generate_candidates
 from .reporter import print_detailed_analysis, export_candidate_results, print_split_report
 from .thermo import run_rnafold_dna
 
-def generate_pool(spacer_priorities, cas12a_priorities, pool_file="pools_by_length.pkl"):
+def generate_pool(spacer_priorities, cas12a_priorities, pool_file="pools_by_length.pkl", num_samples=500000, gc_range_spacer=(35,60), gc_range_cas=(35,65)):
     """
     Generate or load spacer and Cas12a pools.
     """
+    # If custom parameters are used, we might want to skip loading from default pickle to avoid stale data,
+    # or use a hash of params for the filename. For simplicity, we just log a warning if loading.
+    
     if os.path.exists(pool_file):
         print(f"[INFO] Loading pools from {pool_file}...")
         try:
@@ -21,8 +24,8 @@ def generate_pool(spacer_priorities, cas12a_priorities, pool_file="pools_by_leng
             print(f"[WARNING] Failed to load pools: {e}. Regenerating...")
 
     print("[INFO] Generating new pools...")
-    spacer_pools = {L: generate_candidates([L], num_samples=500000, gc_range=(35,60), detailed_filter=spacer_filter) for L in spacer_priorities}
-    cas12a_pools = {L: generate_candidates([L], num_samples=500000, gc_range=(35,65), detailed_filter=cas12a_filter) for L in cas12a_priorities}
+    spacer_pools = {L: generate_candidates([L], num_samples=num_samples, gc_range=gc_range_spacer, detailed_filter=spacer_filter) for L in spacer_priorities}
+    cas12a_pools = {L: generate_candidates([L], num_samples=num_samples, gc_range=gc_range_cas, detailed_filter=cas12a_filter) for L in cas12a_priorities}
 
     print("Spacer pools:", {k: len(v) for k, v in spacer_pools.items()}, "→ Total:", sum(len(v) for v in spacer_pools.values()))
     print("Cas12a pools:", {k: len(v) for k, v in cas12a_pools.items()}, "→ Total:", sum(len(v) for v in cas12a_pools.values()))
@@ -35,7 +38,7 @@ def generate_pool(spacer_priorities, cas12a_priorities, pool_file="pools_by_leng
 
     return spacer_pools, cas12a_pools
 
-def assemble_and_filter_padlocks(name, seq, spacer_pools, cas12a_pools, num_to_generate=30):
+def assemble_and_filter_padlocks(name, seq, spacer_pools, cas12a_pools, num_to_generate=30, validation_params=None):
     """
     Main pipeline to find the best split and generate validated padlock candidates.
     """
@@ -45,8 +48,8 @@ def assemble_and_filter_padlocks(name, seq, spacer_pools, cas12a_pools, num_to_g
     split_res = find_best_split(target_name, target_seq)
     print_split_report(split_res)   
     
-    # Setup Validation Parameters
-    VALIDATION_PARAMS = {
+    # Setup Validation Parameters (Default)
+    DEFAULT_VALIDATION_PARAMS = {
         # 01: Poly-N repeats (e.g., AAAAA)
         "has_long_homopolymer(padlock_seq)": 4,
 
@@ -77,12 +80,17 @@ def assemble_and_filter_padlocks(name, seq, spacer_pools, cas12a_pools, num_to_g
         # 08: RCA product vs. Original target/spacer
         "has_cross_hybridization(padlock_seq_rc, mirna_seq)": 6,
     }
+    
+    # Merge custom params if provided
+    active_params = DEFAULT_VALIDATION_PARAMS.copy()
+    if validation_params:
+        active_params.update(validation_params)
 
     results = validate_padlocks(
         spacer_pools, 
         cas12a_pools, 
         split_res, 
-        VALIDATION_PARAMS, 
+        active_params, 
         NUM_PADLOCKS=num_to_generate, 
         seed_offset=0
     )
