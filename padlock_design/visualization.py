@@ -61,6 +61,9 @@ def plot_structure(sequence, structure, title="Padlock Structure"):
     nx.draw_networkx_labels(G, pos, labels, font_size=10, font_weight='bold', font_color='black')
     
     # --- Annotation for Indices and Termini ---
+    dist = 1.15  # Adjusted distance for number labels
+    fontsize = 9 # Adjusted font size for number labels
+
     for i in range(n):
         (x, y) = pos[i]
         is_first = (i == 0)
@@ -68,21 +71,16 @@ def plot_structure(sequence, structure, title="Padlock Structure"):
         is_milestone = (i + 1) % 10 == 0 and not is_first and not is_last
 
         if is_first:
-            dist = 1.18
-            lbl_x, lbl_y = x * dist, y * dist
-            # Increased fontsize for 5'-P
-            plt.text(x * 1.3, y, "5'-P", ha='left', va='center', fontsize=14, color='black', weight='bold')
-            plt.text(lbl_x, lbl_y, "1", ha='center', va='center', fontsize=8, color='gray', weight='bold')
+            # Position '1' and '5-P' vertically stacked
+            plt.text(x * dist, y + 0.06, "5'-P", ha='center', va='center', fontsize=12, color='black', weight='bold')
+            plt.text(x * dist, y - 0.06, "1", ha='center', va='center', fontsize=fontsize, color='gray', weight='bold')
         elif is_last:
-            dist = 1.18
-            lbl_x, lbl_y = x * dist, y * dist
-            # Added -3' label
-            plt.text(lbl_x, lbl_y, f"{n}", ha='center', va='center', fontsize=8, color='gray', weight='bold')
-            plt.text(x * 1.3, y, "-3'", ha='right', va='center', fontsize=14, color='black', weight='bold')
+            # Position 'n' and '-3' vertically stacked
+            plt.text(x * dist, y + 0.06, str(n), ha='center', va='center', fontsize=fontsize, color='gray', weight='bold')
+            plt.text(x * dist, y - 0.06, "-3'", ha='center', va='center', fontsize=12, color='black', weight='bold')
         elif is_milestone:
-            dist = 1.18
             lbl_x, lbl_y = x * dist, y * dist
-            plt.text(lbl_x, lbl_y, str(i + 1), ha='center', va='center', fontsize=8, color='gray')
+            plt.text(lbl_x, lbl_y, str(i + 1), ha='center', va='center', fontsize=fontsize, color='gray')
 
     plt.title(title, fontsize=15, fontweight='bold', pad=20)
     plt.axis('off')
