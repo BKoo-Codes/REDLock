@@ -26,7 +26,19 @@ PadDx_miR is an automated design pipeline for creating high-specificity padlock 
 
 ## Usage
 
-Run the tool via the command line interface (CLI):
+### Option 1: Graphical User Interface (GUI) - Recommended
+
+Launch the interactive web-based dashboard:
+
+```bash
+streamlit run app.py
+```
+
+This will open the design tool in your default web browser. You can configure parameters, run the design pipeline, and download results directly from the interface.
+
+### Option 2: Command Line Interface (CLI)
+
+Run the tool via the terminal for batch processing or automation:
 
 ```bash
 python main.py --target_name "hsa-miR-21-5p" \
@@ -35,7 +47,7 @@ python main.py --target_name "hsa-miR-21-5p" \
                --output "results/my_design.xlsx"
 ```
 
-### Arguments
+### Arguments (CLI)
 
 - `--target_name`: Name of the target miRNA (default: "hsa-miR-21-5p")
 - `--target_seq`: Sequence of the target miRNA (default: "UAGCUUAUCAGACUGAUGUUGA")
