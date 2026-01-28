@@ -17,6 +17,10 @@
     box-sizing: border-box;
 }
 
+html {
+    scroll-behavior: smooth;
+}
+
 body {
     font-family: var(--font-main);
     background-color: var(--bg-color);
@@ -28,6 +32,10 @@ body {
     max-width: 1200px;
     margin: 0 auto;
     padding: 0 20px;
+}
+
+main {
+    overflow-x: hidden;
 }
 
 /* Header */
@@ -140,7 +148,6 @@ nav {
 
 .btn:hover {
     transform: translateY(-2px);
-    opacity: 0.9;
 }
 
 .btn-primary {
@@ -211,6 +218,7 @@ nav {
 .cursor {
     display: inline-block;
     width: 10px;
+    height: 1.1em;
     background: var(--text-color);
     animation: blink 1s infinite;
 }
@@ -226,7 +234,7 @@ nav {
     background: #0b1120;
 }
 
-.features h2, .usage h2 {
+.features h2, .usage h2, .contact h2 {
     text-align: center;
     font-size: 2.5rem;
     margin-bottom: 60px;
@@ -234,7 +242,7 @@ nav {
 
 .feature-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
     gap: 30px;
 }
 
@@ -243,7 +251,7 @@ nav {
     padding: 30px;
     border-radius: 12px;
     border: 1px solid rgba(255,255,255,0.05);
-    transition: transform 0.3s;
+    transition: transform 0.3s, border-color 0.3s;
 }
 
 .feature-card:hover {
@@ -316,11 +324,79 @@ nav {
     border-radius: 4px;
     cursor: pointer;
     transition: background 0.2s;
+    font-size: 0.9rem;
 }
 
 .copy-btn:hover {
     background: rgba(255,255,255,0.2);
 }
+
+.copy-btn .fa-check {
+    color: var(--success-color);
+}
+
+.usage-note {
+    margin-top: 15px;
+    font-size: 0.9rem;
+    color: var(--text-muted);
+    background: var(--card-bg);
+    padding: 15px;
+    border-radius: 6px;
+    border-left: 4px solid var(--secondary-color);
+}
+
+/* Contact Section */
+.contact {
+    padding: 100px 0;
+    background: #0b1120;
+}
+
+.contact p {
+    text-align: center;
+    color: var(--text-muted);
+    max-width: 600px;
+    margin: -40px auto 40px auto;
+}
+
+.contact form {
+    max-width: 700px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.form-group {
+    display: flex;
+    gap: 20px;
+}
+
+.contact input,
+.contact textarea {
+    width: 100%;
+    padding: 15px;
+    background: var(--card-bg);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    color: var(--text-color);
+    font-family: var(--font-main);
+    font-size: 1rem;
+    transition: border-color 0.3s;
+}
+
+.contact input:focus,
+.contact textarea:focus {
+    outline: none;
+    border-color: var(--primary-color);
+}
+
+.contact button[type="submit"] {
+    align-self: center;
+    width: 200px;
+    cursor: pointer;
+    border: none;
+}
+
 
 /* Footer */
 footer {
@@ -347,6 +423,7 @@ footer {
     color: var(--primary-color);
 }
 
+/* Responsive */
 @media (max-width: 768px) {
     .hero .container {
         flex-direction: column;
@@ -362,6 +439,10 @@ footer {
     }
     
     .nav-links {
-        display: none;
+        display: none; /* In a real scenario, you'd add a hamburger menu */
+    }
+
+    .form-group {
+        flex-direction: column;
     }
 }
