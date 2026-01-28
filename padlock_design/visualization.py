@@ -65,11 +65,18 @@ def plot_structure(sequence, structure, title="Padlock Structure"):
                            node_color=[node_colors[i] for i in non_binding_nodes],
                            node_size=500, edgecolors='black', linewidths=1.0)
     
-    # Draw binding nodes with a dashed border
+    # Draw binding nodes with a "halo" effect to represent the dashed border
     if binding_nodes:
+        # 1. Draw the larger, pink circle to act as a border (the halo)
+        nx.draw_networkx_nodes(G, pos, nodelist=binding_nodes,
+                               node_size=700,
+                               node_color='#FF4081',
+                               linewidths=0)
+        # 2. Draw the actual node on top of the halo
         nx.draw_networkx_nodes(G, pos, nodelist=binding_nodes, 
                                node_color=[node_colors[i] for i in binding_nodes],
-                               node_size=500, edgecolors='#FF4081', linewidths=2.0, linestyle='dashed')
+                               node_size=500,
+                               linewidths=0)
     
     # Draw labels
     labels = {i: base for i, base in enumerate(sequence)}
