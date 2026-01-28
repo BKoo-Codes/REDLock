@@ -94,9 +94,55 @@ with st.sidebar:
         score_cross_mirna = st.number_input("miRNA Arm Cross-Hyb", 1, 10, 3, help="Interaction with miRNA binding arms (Critical).")
         score_cross_global = st.number_input("Global Cross-Hyb", 1, 10, 6, help="General non-specific interaction score.")
 
-    st.markdown("### 🛡️ Validation")
+import shutil
+
+# ... existing imports ...
+
+# Helper to find RNAfold
+def find_rnafold_path():
+    # 1. Check system PATH
+    path = shutil.which("RNAfold")
+    if path:
+        return path
+        
+    # 2. Check common Windows paths
+    common_paths = [
+        r"C:\Program Files (x86)\ViennaRNA Package\RNAfold.exe",
+        r"C:\Program Files\ViennaRNA Package\RNAfold.exe",
+        r"C:\ViennaRNA Package\RNAfold.exe",
+        r"C:\ViennaRNA\RNAfold.exe"
+    ]
+    for p in common_paths:
+        if os.path.exists(p):
+            return p
+            
+    return ""
+
+# Sidebar - Configuration
+with st.sidebar:
+    # ... existing settings ...
+    
+    st.markdown("### 🛡️ Validation & Stability")
+    
+    # RNAfold Configuration
+    detected_path = find_rnafold_path()
+    rnafold_path = st.text_input(
+        "RNAfold Path", 
+        value=detected_path, 
+        help="Full path to RNAfold.exe. If empty, dG calculation will be skipped (0.0)."
+    )
+    
+    if st.button("Test RNAfold Path"):
+        if rnafold_path and os.path.exists(rnafold_path):
+            st.success("✅ RNAfold found!")
+        elif not rnafold_path:
+            st.warning("⚠️ Path is empty.")
+        else:
+            st.error("❌ File not found at this path.")
+
     skip_blast = st.checkbox("Skip NCBI BLAST (Faster)", value=False, help="Skip the time-consuming NCBI BLAST step.")
-    rnafold_path = st.text_input("RNAfold Path (Optional)", value="", help="Full path to RNAfold executable if not in system PATH.")
+    
+    # ... existing settings ...
 
     st.markdown("---")
     run_btn = st.button("🚀 Run Design", type="primary")
