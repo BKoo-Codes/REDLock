@@ -73,20 +73,20 @@ def plot_structure(sequence, structure, title="Padlock Structure", regions=None)
     for region, edge_list in edges_by_region.items():
         if edge_list:
             nx.draw_networkx_edges(G, pos, edgelist=edge_list, width=3.5, 
-                                   edge_color=region_colors.get(region, 'gray'), alpha=0.9, zorder=1)
+                                   edge_color=region_colors.get(region, 'gray'), alpha=0.9)
 
     # Draw pairing edges
     pair_edges = [(u, v) for u, v, d in G.edges(data=True) if d.get('type') == 'pair']
-    nx.draw_networkx_edges(G, pos, edgelist=pair_edges, width=1.5, edge_color='#FF4081', style='dashed', zorder=2)
+    nx.draw_networkx_edges(G, pos, edgelist=pair_edges, width=1.5, edge_color='#FF4081', style='dashed')
     
     # --- Draw only the actual nodes, not the dummy gap_node ---
     actual_nodes = list(range(n))
     nx.draw_networkx_nodes(G, pos, nodelist=actual_nodes, node_color=[node_colors[i] for i in actual_nodes], 
-                           node_size=500, edgecolors='black', linewidths=1.0, zorder=3)
+                           node_size=500, edgecolors='black', linewidths=1.0)
     
     # Draw base labels inside nodes
     labels = {i: base for i, base in enumerate(sequence)}
-    nx.draw_networkx_labels(G, pos, labels, font_size=10, font_weight='bold', font_color='black', zorder=4)
+    nx.draw_networkx_labels(G, pos, labels, font_size=10, font_weight='bold', font_color='black')
     
     # --- Annotation for Indices and Termini ---
     for i in range(n):
