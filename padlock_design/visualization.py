@@ -60,23 +60,35 @@ def plot_structure(sequence, structure, title="Padlock Structure"):
     labels = {i: base for i, base in enumerate(sequence)}
     nx.draw_networkx_labels(G, pos, labels, font_size=10, font_weight='bold', font_color='black')
     
-    # --- Annotation for Indices ---
-    dist = 1.12  # Further reduced distance for number labels
-    fontsize = 9
+    # --- Annotation for Indices and Termini ---
+    dist = 1.12  # Distance for number labels
+    fontsize = 9 # Font size for number labels
+    
+    termini_offset_x = 0.08 # How far to the left of the node's radial line
+    termini_offset_y = 0.06 # Vertical separation from node center
 
     for i in range(n):
-        (x, y) = pos[i]
+        (x_node, y_node) = pos[i] # Position of the node
         is_first = (i == 0)
         is_last = (i == n - 1)
         is_milestone = (i + 1) % 10 == 0
 
-        if is_first or is_last or is_milestone:
-            lbl_x, lbl_y = x * dist, y * dist
-            plt.text(lbl_x, lbl_y, str(i + 1), ha='center', va='center', fontsize=fontsize, color='gray', weight='bold')
-
-    # --- Place termini labels on the left side of the plot ---
-    plt.text(-1.2, 0.1, "5'-P", ha='right', va='center', fontsize=12, color='black', weight='bold')
-    plt.text(-1.2, -0.1, "3'-", ha='right', va='center', fontsize=12, color='black', weight='bold')
+        # Calculate position for number labels
+        lbl_x, lbl_y = x_node * dist, y_node * dist
+        
+        # Draw number labels
+        if is_first:
+            # Draw '1'
+            plt.text(lbl_x, lbl_y, "1", ha='center', va='center', fontsize=fontsize, color='gray', weight='bold')
+            # Place 5'-P to the left of '1'
+            plt.text(lbl_x - termini_offset_x, lbl_y + termini_offset_y, "5'-P", ha='right', va='center', fontsize=12, color='black', weight='bold')
+        elif is_last:
+            # Draw 'n'
+            plt.text(lbl_x, lbl_y, str(n), ha='center', va='center', fontsize=fontsize, color='gray', weight='bold')
+            # Place 3'- to the left of 'n'
+            plt.text(lbl_x - termini_offset_x, lbl_y - termini_offset_y, "3'-", ha='right', va='center', fontsize=12, color='black', weight='bold')
+        elif is_milestone:
+            plt.text(lbl_x, lbl_y, str(i + 1), ha='center', va='center', fontsize=fontsize, color='gray')
 
     plt.title(title, fontsize=15, fontweight='bold', pad=20)
     plt.axis('off')
