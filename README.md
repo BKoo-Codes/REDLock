@@ -47,6 +47,27 @@ python main.py --target_name "hsa-miR-21-5p" \
                --output "results/my_design.xlsx"
 ```
 
+### Option 3: Create Standalone Executable (.exe)
+
+You can package this tool into a single executable file that runs without installing Python (ideal for sharing with non-technical users).
+
+1.  **Install PyInstaller:**
+    ```bash
+    pip install pyinstaller
+    ```
+
+2.  **Build the Executable:**
+    Run the following command in your terminal (Windows PowerShell or Command Prompt):
+    ```bash
+    pyinstaller --onefile --add-data "app.py;." --add-data "padlock_design;padlock_design" --name PadDx_miR_Tool --clean run_gui.py
+    ```
+    *(Note: On Linux/macOS, replace `;` with `:` in the `--add-data` arguments)*
+
+3.  **Run:**
+    - Go to the `dist` folder.
+    - You will find `PadDx_miR_Tool.exe`.
+    - Double-click to run the application instantly!
+
 ### Arguments (CLI)
 
 - `--target_name`: Name of the target miRNA (default: "hsa-miR-21-5p")
