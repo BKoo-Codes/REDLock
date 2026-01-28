@@ -69,7 +69,7 @@ def plot_structure(sequence, structure, title="Padlock Structure"):
     if binding_nodes:
         nx.draw_networkx_nodes(G, pos, nodelist=binding_nodes, 
                                node_color=[node_colors[i] for i in binding_nodes],
-                               node_size=500, edgecolors='#FF4081', linewidths=2.0, linestyles='dashed')
+                               node_size=500, edgecolors='#FF4081', linewidths=2.0, linestyle='dashed')
     
     # Draw labels
     labels = {i: base for i, base in enumerate(sequence)}
