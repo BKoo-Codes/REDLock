@@ -3,10 +3,9 @@ import pickle
 import os
 import time
 from Bio.Blast import NCBIWWW, NCBIXML
-from .utils import generate_candidates
 from .filters import spacer_filter, cas12a_filter
-from .assembler import find_best_split, print_split_report, validate_padlocks
-from .reporter import print_detailed_analysis, export_candidate_results
+from .assembler import find_best_split, validate_padlocks, generate_candidates
+from .reporter import print_detailed_analysis, export_candidate_results, print_split_report
 from .thermo import run_rnafold_dna
 
 def generate_pool(spacer_priorities, cas12a_priorities, pool_file="pools_by_length.pkl"):
@@ -90,7 +89,7 @@ def assemble_and_filter_padlocks(name, seq, spacer_pools, cas12a_pools, num_to_g
     
     return results
 
-def analyze_and_sort_padlocks(df, dg_threshold=-3.5):
+def analyze_and_sort_padlocks(df, dg_threshold=-3.5, rnafold_path=None):
     """
     Analyzes sequences and filters out candidates with ΔG <= threshold (too stable).
     Returns a filtered dataframe sorted by stability.
@@ -110,8 +109,12 @@ def analyze_and_sort_padlocks(df, dg_threshold=-3.5):
         raw_seq = str(row["Padlock Sequence (5'-P)"])
         clean_seq = raw_seq.replace("[5'-P]-", "").strip()
         
-        struct, dg = run_rnafold_dna(clean_seq)
+        struct, dg = run_rnafold_dna(clean_seq, rnafold_executable=rnafold_path)
         
+        # Ensure dg is a float for comparison
+        if not isinstance(dg, (int, float)):
+            dg = 0.0 # Default to 0.0 if RNAfold failed or returned non-numeric
+            
         results_struct.append(struct)
         results_dg.append(dg)
         

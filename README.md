@@ -42,7 +42,8 @@ python main.py --target_name "hsa-miR-21-5p" \
 - `--num_candidates`: Number of candidates to generate (default: 10)
 - `--output`: Path to save the Excel result file (default: "results/padlock_results.xlsx")
 - `--skip_blast`: Skip the NCBI BLAST validation step (faster execution)
-- `--dg_threshold`: Delta G threshold for stability filtering (default: -3.5)
+- `--rnafold_path`: Path to the ViennaRNA `RNAfold` executable (e.g., `C:\\Program Files (x86)\\ViennaRNA Package\\RNAfold.exe` on Windows, or `/usr/local/bin/RNAfold` on Linux/macOS if not in PATH). If not provided, the tool will try to find `RNAfold` in your system's PATH.
+
 
 ## Website
 

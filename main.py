@@ -19,6 +19,7 @@ def main():
     parser.add_argument("--output", type=str, default="results/padlock_results.xlsx", help="Output Excel file path")
     parser.add_argument("--skip_blast", action="store_true", help="Skip NCBI BLAST validation (faster)")
     parser.add_argument("--dg_threshold", type=float, default=-3.5, help="Delta G threshold for stability filtering")
+    parser.add_argument("--rnafold_path", type=str, default=None, help="Path to the RNAfold executable (e.g., C:\\Program Files (x86)\\ViennaRNA Package\\RNAfold.exe)")
     
     args = parser.parse_args()
     
@@ -34,6 +35,8 @@ def main():
     print(f"Sequence: {args.target_seq}")
     print(f"Candidates to generate: {args.num_candidates}")
     print(f"Output: {args.output}")
+    if args.rnafold_path:
+        print(f"RNAfold Path: {args.rnafold_path}")
     print(f"{'='*50}\n")
 
     # 1. Generate/Load Pools
@@ -60,7 +63,7 @@ def main():
     
     # 3. Analyze and Sort by Stability
     print("\n>>> Step 3: Analyzing Stability (RNAfold)...")
-    sorted_df = analyze_and_sort_padlocks(df, dg_threshold=args.dg_threshold)
+    sorted_df = analyze_and_sort_padlocks(df, dg_threshold=args.dg_threshold, rnafold_path=args.rnafold_path)
     
     if sorted_df.empty:
         print("[WARNING] All candidates were rejected due to stability issues.")

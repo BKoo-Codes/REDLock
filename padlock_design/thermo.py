@@ -27,21 +27,32 @@ def _resolve_dna_par():
 
 RESOLVED_DNA_PAR = _resolve_dna_par()
 
-def run_rnafold_dna(seq, temp=37.0):
+def run_rnafold_dna(seq, temp=37.0, rnafold_executable=None):
     """
     Predicts DNA secondary structure and MFE using RNAfold.
 
     Args:
         seq (str): DNA sequence.
         temp (float): Simulation temperature (°C). Defaults to 37.0.
+        rnafold_executable (str, optional): Path to the RNAfold executable. 
+                                            If None, attempts to find it in PATH.
 
     Returns:
         tuple[str, float]: (Dot-bracket structure, MFE in kcal/mol).
+                           Returns ("N/A", 0.0) if an error occurs or executable not found.
     """
+    executable = rnafold_executable if rnafold_executable else which("RNAfold")
+    if not executable:
+        print("[ERROR] RNAfold executable not found. Please provide path or ensure it's in PATH.")
+        return "N/A", 0.0
+
+    # Fallback for DNA_PARAMETERS if RESOLVED_DNA_PAR is not a valid file path
+    resolved_dna_par_path = RESOLVED_DNA_PAR if os.path.isfile(RESOLVED_DNA_PAR) else "dna_mathews.par"
+
     cmd = [
-            RNAFOLD_PATH, 
+            executable, 
             "--noconv", 
-            "-P", RESOLVED_DNA_PAR, 
+            "-P", resolved_dna_par_path, 
             f"--temp={temp}", 
             "--noPS"
         ]
@@ -54,15 +65,19 @@ def run_rnafold_dna(seq, temp=37.0):
         lines = stdout.strip().splitlines()
         if len(lines) >= 2:
             structure = lines[1].split()[0]
-            energy = float(parts[-1].strip('()')) if (parts := lines[1].split()) else 0.0
-
+            # Extract energy, robustly handle cases where split might not yield expected parts
+            energy_str = lines[1].split('(')[-1].strip(')')
+            try:
+                energy = float(energy_str)
+            except ValueError:
+                energy = 0.0 # Default to 0.0 if energy parsing fails
             return structure, energy
             
     except Exception as e:
-        print(f"Python Exception: {e}")
-        return None, None
+        print(f"[ERROR] RNAfold execution failed: {e}")
+        return "N/A", 0.0
 
-    return None, None
+    return "N/A", 0.0
 
 def run_rnacofold(seq1, seq2, temperature=VIENNA_TEMP_C, dangles=VIENNA_DANGLES, 
                   use_dna_params=True, return_structure=True):
