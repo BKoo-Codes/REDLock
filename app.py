@@ -246,6 +246,7 @@ if st.session_state.results is not None:
     with st.expander("🔍 Detailed Sequence View"):
         for i, row in df_res.iterrows():
             st.markdown(f"**#{row.get('Candidate ID', i+1)}**")
-            st.code(f"Padlock: {row.get('Padlock Sequence (5\'-P)', 'N/A')}")
+            padlock_seq = row.get("Padlock Sequence (5'-P)", "N/A")
+            st.code(f"Padlock: {padlock_seq}")
             st.text(f"Spacer: {row.get('Spacer (Pad)', 'N/A')} | Cas12a Core: {row.get('Cas12a Core (Pad)', 'N/A')}")
             st.markdown("---")
