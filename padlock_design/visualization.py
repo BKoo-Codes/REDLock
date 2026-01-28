@@ -60,27 +60,23 @@ def plot_structure(sequence, structure, title="Padlock Structure"):
     labels = {i: base for i, base in enumerate(sequence)}
     nx.draw_networkx_labels(G, pos, labels, font_size=10, font_weight='bold', font_color='black')
     
-    # --- Annotation for Indices and Termini ---
-    dist = 1.15  # Adjusted distance for number labels
-    fontsize = 9 # Adjusted font size for number labels
+    # --- Annotation for Indices ---
+    dist = 1.12  # Further reduced distance for number labels
+    fontsize = 9
 
     for i in range(n):
         (x, y) = pos[i]
         is_first = (i == 0)
         is_last = (i == n - 1)
-        is_milestone = (i + 1) % 10 == 0 and not is_first and not is_last
+        is_milestone = (i + 1) % 10 == 0
 
-        if is_first:
-            # Position '1' and '5-P' vertically stacked
-            plt.text(x * dist, y + 0.06, "5'-P", ha='center', va='center', fontsize=12, color='black', weight='bold')
-            plt.text(x * dist, y - 0.06, "1", ha='center', va='center', fontsize=fontsize, color='gray', weight='bold')
-        elif is_last:
-            # Position 'n' and '-3' vertically stacked
-            plt.text(x * dist, y + 0.06, str(n), ha='center', va='center', fontsize=fontsize, color='gray', weight='bold')
-            plt.text(x * dist, y - 0.06, "-3'", ha='center', va='center', fontsize=12, color='black', weight='bold')
-        elif is_milestone:
+        if is_first or is_last or is_milestone:
             lbl_x, lbl_y = x * dist, y * dist
-            plt.text(lbl_x, lbl_y, str(i + 1), ha='center', va='center', fontsize=fontsize, color='gray')
+            plt.text(lbl_x, lbl_y, str(i + 1), ha='center', va='center', fontsize=fontsize, color='gray', weight='bold')
+
+    # --- Place termini labels on the left side of the plot ---
+    plt.text(-1.2, 0.1, "5'-P", ha='right', va='center', fontsize=12, color='black', weight='bold')
+    plt.text(-1.2, -0.1, "3'-", ha='right', va='center', fontsize=12, color='black', weight='bold')
 
     plt.title(title, fontsize=15, fontweight='bold', pad=20)
     plt.axis('off')
