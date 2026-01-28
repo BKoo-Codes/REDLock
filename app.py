@@ -337,35 +337,13 @@ if st.session_state.results is not None:
                         # Clean sequence for visualization
                         clean_seq = padlock_seq.replace("[5'-P]-", "")
                         
-                        # --- Calculate region indices for visualization ---
-                        regions = {}
-                        current_pos = 0
-                        
-                        # Define the sequence of regions as they appear in the padlock
-                        region_map = [
-                            ("5' miRNA Arm", "miRNA 5' Arm (Pad)"),
-                            ("Spacer", "Spacer (Pad)"),
-                            ("Cas12a binding site", "Cas12a Core (Pad)"),
-                            ("Short spacer", "Short spacer"),
-                            ("3' miRNA Arm", "miRNA 3' Arm (Pad)"),
-                        ]
-                        
-                        for region_name, column_name in region_map:
-                            seq_part = row.get(column_name, "")
-                            if seq_part:
-                                start_pos = current_pos
-                                end_pos = current_pos + len(seq_part)
-                                regions[region_name] = (start_pos, end_pos)
-                                current_pos = end_pos
-                        
-                        # Call plot_structure with regions
+                        # Call plot_structure without regions
                         img_buf = plot_structure(
                             clean_seq, 
                             structure, 
-                            title=f"Candidate #{row.get('Candidate ID', i+1)}",
-                            regions=regions
+                            title=f"Candidate #{row.get('Candidate ID', i+1)}"
                         )
-                        st.image(img_buf, caption="Predicted 2D Structure with Regions", use_container_width=True)
+                        st.image(img_buf, caption="Predicted 2D Structure", use_container_width=True)
                     except Exception as e:
                         st.error(f"Could not visualize structure: {e}")
             

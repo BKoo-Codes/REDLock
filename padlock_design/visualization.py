@@ -3,11 +3,10 @@ import networkx as nx
 import numpy as np
 import io
 
-def plot_structure(sequence, structure, title="Padlock Structure", regions=None):
+def plot_structure(sequence, structure, title="Padlock Structure"):
     """
     Draws a secondary structure diagram using matplotlib and networkx.
     Uses a circular layout with a visible gap between start and end.
-    Highlights different regions of the backbone with colors and a legend.
     """
     sequence = sequence.upper()
     n = len(sequence)
@@ -22,9 +21,9 @@ def plot_structure(sequence, structure, title="Padlock Structure", regions=None)
     # --- Add a dummy node to create a visual gap in the circular layout ---
     G.add_node('gap_node')
     
-    # Add backbone edges with a default region
+    # Add backbone edges
     for i in range(n - 1):
-        G.add_edge(i, i + 1, type='backbone', region='Backbone')
+        G.add_edge(i, i + 1, type='backbone')
 
     # Parse dot-bracket structure for pairing
     stack = []
@@ -36,44 +35,17 @@ def plot_structure(sequence, structure, title="Padlock Structure", regions=None)
                 start = stack.pop()
                 G.add_edge(start, i, type='pair')
 
-    # Assign specific regions to backbone edges if provided
-    if regions:
-        for name, (start, end) in regions.items():
-            if start is None or end is None: continue
-            start = max(0, start)
-            end = min(n, end) # Use n for end range
-            for i in range(start, end):
-                if i < n -1 and G.has_edge(i, i + 1):
-                    G.edges[i, i + 1]['region'] = name
-
     # --- Layout: Use circular_layout with the dummy node to create a gap ---
     pos = nx.circular_layout(G)
     
     # Draw
-    plt.figure(figsize=(10, 8))
+    plt.figure(figsize=(8, 8))
     ax = plt.gca()
     
-    # Define region colors
-    region_colors = {
-        "5' miRNA Arm": 'blue',
-        "3' miRNA Arm": 'blue',
-        'Cas12a binding site': 'green',
-        'Spacer': 'purple',
-        'Short spacer': 'orange',
-        'Backbone': 'gray'
-    }
-    
-    # Separate and draw backbone edges by region
-    edges_by_region = {name: [] for name in region_colors}
-    backbone_edges = [(u, v, d) for u, v, d in G.edges(data=True) if d.get('type') == 'backbone']
-    for u, v, data in backbone_edges:
-        region = data.get('region', 'Backbone')
-        edges_by_region[region].append((u, v))
-
-    for region, edge_list in edges_by_region.items():
-        if edge_list:
-            nx.draw_networkx_edges(G, pos, edgelist=edge_list, width=3.5, 
-                                   edge_color=region_colors.get(region, 'gray'), alpha=0.9)
+    # --- Draw backbone edges in a single color ---
+    backbone_edges = [(u, v) for u, v, d in G.edges(data=True) if d.get('type') == 'backbone']
+    nx.draw_networkx_edges(G, pos, edgelist=backbone_edges, width=3.0, 
+                           edge_color='gray', alpha=0.9)
 
     # Draw pairing edges
     pair_edges = [(u, v) for u, v, d in G.edges(data=True) if d.get('type') == 'pair']
@@ -95,27 +67,26 @@ def plot_structure(sequence, structure, title="Padlock Structure", regions=None)
         is_last = (i == n - 1)
         is_milestone = (i + 1) % 10 == 0 and not is_first and not is_last
 
-        if is_first or is_last or is_milestone:
+        if is_first:
             dist = 1.18
             lbl_x, lbl_y = x * dist, y * dist
-            
-            if is_first:
-                plt.text(x * 1.25, y, "5'-P", ha='left', va='center', fontsize=10, color='black', weight='bold')
-                plt.text(x * 1.1, y, "1", ha='right', va='center', fontsize=8, color='gray', weight='bold')
-            elif is_last:
-                plt.text(lbl_x, lbl_y, str(n), ha='center', va='center', fontsize=8, color='gray', weight='bold')
-            else: # Milestones
-                plt.text(lbl_x, lbl_y, str(i + 1), ha='center', va='center', fontsize=8, color='gray')
-
-    # Add a legend for regions
-    handles = [plt.Line2D([0], [0], color=color, lw=4, label=name) 
-               for name, color in region_colors.items() if name != 'Backbone' and edges_by_region.get(name)]
-    if handles:
-        ax.legend(handles=handles, title="Regions", bbox_to_anchor=(1.02, 1), loc='upper left', borderaxespad=0.)
+            # Increased fontsize for 5'-P
+            plt.text(x * 1.3, y, "5'-P", ha='left', va='center', fontsize=14, color='black', weight='bold')
+            plt.text(lbl_x, lbl_y, "1", ha='center', va='center', fontsize=8, color='gray', weight='bold')
+        elif is_last:
+            dist = 1.18
+            lbl_x, lbl_y = x * dist, y * dist
+            # Added -3' label
+            plt.text(lbl_x, lbl_y, f"{n}", ha='center', va='center', fontsize=8, color='gray', weight='bold')
+            plt.text(x * 1.3, y, "-3'", ha='right', va='center', fontsize=14, color='black', weight='bold')
+        elif is_milestone:
+            dist = 1.18
+            lbl_x, lbl_y = x * dist, y * dist
+            plt.text(lbl_x, lbl_y, str(i + 1), ha='center', va='center', fontsize=8, color='gray')
 
     plt.title(title, fontsize=15, fontweight='bold', pad=20)
     plt.axis('off')
-    plt.tight_layout(rect=[0, 0, 0.85, 1])
+    plt.tight_layout()
     
     # Save to buffer
     buf = io.BytesIO()
