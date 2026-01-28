@@ -10,6 +10,9 @@ from padlock_design.pipeline import (
     run_blast_validation,
     export_candidate_results
 )
+from padlock_design.visualization import plot_structure
+
+# ... existing imports ...
 
 # Page Config
 st.set_page_config(
@@ -318,6 +321,24 @@ if st.session_state.results is not None:
         for i, row in df_res.iterrows():
             st.markdown(f"**#{row.get('Candidate ID', i+1)}**")
             padlock_seq = row.get("Padlock Sequence (5'-P)", "N/A")
-            st.code(f"Padlock: {padlock_seq}")
-            st.text(f"Spacer: {row.get('Spacer (Pad)', 'N/A')} | Cas12a Core: {row.get('Cas12a Core (Pad)', 'N/A')}")
+            structure = row.get("Secondary Structure", "")
+            
+            col_det1, col_det2 = st.columns([2, 1])
+            
+            with col_det1:
+                st.code(f"Padlock: {padlock_seq}")
+                st.text(f"Spacer: {row.get('Spacer (Pad)', 'N/A')} | Cas12a Core: {row.get('Cas12a Core (Pad)', 'N/A')}")
+                if structure:
+                    st.text(f"Structure: {structure}")
+            
+            with col_det2:
+                if structure and padlock_seq != "N/A":
+                    try:
+                        # Clean sequence for visualization (remove 5'-P tag if present in logic, though .get returns raw string usually)
+                        clean_seq = padlock_seq.replace("[5'-P]-", "")
+                        img_buf = plot_structure(clean_seq, structure, title=f"Candidate #{row.get('Candidate ID', i+1)}")
+                        st.image(img_buf, caption="Predicted 2D Structure (Circular Layout)", use_container_width=True)
+                    except Exception as e:
+                        st.error(f"Could not visualize structure: {e}")
+            
             st.markdown("---")
