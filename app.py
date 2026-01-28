@@ -69,8 +69,8 @@ with st.sidebar:
     target_seq = st.text_area("Target miRNA Sequence (RNA/DNA)", value="UAGCUUAUCAGACUGAUGUUGA", height=100, help="Sequence of the target miRNA. U will be automatically converted to T.")
 
     st.markdown("### 🧬 Structure Design")
-    spacer_len_str = st.text_input("Spacer Lengths (nt)", value="16, 15, 17", help="Comma-separated list of prioritized lengths.")
-    cas12a_len_str = st.text_input("Cas12a Core Lengths (nt)", value="20, 21, 22", help="Comma-separated list of prioritized lengths.")
+    spacer_length_single = st.number_input("Spacer Length (nt)", min_value=0, max_value=30, value=15, help="Length of the spacer sequence to prioritize.")
+    cas12a_length_single = st.number_input("Cas12a Core Length (nt)", min_value=20, max_value=24, value=20, help="Length of the Cas12a core sequence to prioritize.")
     
     gc_spacer = st.slider("Spacer GC Content (%)", 0, 100, (35, 60))
     gc_cas = st.slider("Cas12a GC Content (%)", 0, 100, (35, 65))
@@ -113,8 +113,8 @@ if run_btn:
         st.error("Please enter a target sequence.")
     else:
         # Parse inputs
-        spacer_length = parse_int_list(spacer_len_str, [16, 15, 17])
-        cas12a_length = parse_int_list(cas12a_len_str, [20, 21, 22])
+        spacer_length = [int(spacer_length_single)]
+        cas12a_length = [int(cas12a_length_single)]
         
         # Construct Validation Params
         custom_validation_params = {
