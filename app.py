@@ -68,8 +68,8 @@ with st.sidebar:
     st.title("Settings")
     
     st.markdown("### 🎯 Target Parameters")
-    target_name = st.text_input("Target miRNA Name", value="hsa-miR-21-5p", help="Name of the target miRNA")
-    target_seq = st.text_area("Target miRNA Sequence (RNA/DNA)", value="UAGCUUAUCAGACUGAUGUUGA", height=100, help="Sequence of the target miRNA. U will be automatically converted to T.")
+    target_name = st.text_input("Target miRNA Name", value="", help="Name of the target miRNA")
+    target_seq = st.text_area("Target miRNA Sequence (RNA/DNA)", value="", height=100, help="Sequence of the target miRNA. U will be automatically converted to T.")
 
     st.markdown("### 🧬 Structure Design")
     spacer_length_single = st.number_input("Spacer Length (nt)", min_value=0, max_value=30, value=15, help="Length of the spacer sequence to prioritize.")
@@ -158,8 +158,8 @@ if "results" not in st.session_state:
     st.session_state.results = None
 
 if run_btn:
-    if not target_seq:
-        st.error("Please enter a target sequence.")
+    if not target_name or not target_seq:
+        st.error("Please enter both Target miRNA Name and Sequence.")
     else:
         # Parse inputs
         spacer_length = [int(spacer_length_single)]
