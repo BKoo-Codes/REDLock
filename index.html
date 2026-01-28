@@ -1,14 +1,134 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Hello World</title>
-  <link href='/style.css' rel='stylesheet'>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PadDx_miR | Advanced Padlock Probe Design Tool</title>
+    <meta name="description" content="A powerful Python-based tool for designing and validating padlock probes for miRNA detection using RCA and CRISPR-Cas12a.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <h1>Hello, world!</h1>
-  <button onclick="console.log('hello');">Press me</button>
-  <script defer type="text/javascript" src="/main.js"></script>
+    <header>
+        <div class="container">
+            <nav>
+                <div class="logo">
+                    <i class="fa-solid fa-dna"></i> PadDx_miR
+                </div>
+                <ul class="nav-links">
+                    <li><a href="#features">Features</a></li>
+                    <li><a href="#usage">Usage</a></li>
+                    <li><a href="https://github.com/BKoo-Codes/PadDx_miR" target="_blank" class="btn-github"><i class="fa-brands fa-github"></i> GitHub</a></li>
+                </ul>
+            </nav>
+        </div>
+    </header>
+
+    <section class="hero">
+        <div class="container">
+            <div class="hero-content">
+                <h1>Design Perfect <span class="highlight">Padlock Probes</span> <br>for miRNA Detection</h1>
+                <p>Automated design pipeline for RCA-based CRISPR-Cas12a detection systems. 
+                   Optimize specificity, stability, and efficiency in seconds.</p>
+                <div class="hero-btns">
+                    <a href="#usage" class="btn btn-primary">Get Started</a>
+                    <a href="https://github.com/BKoo-Codes/PadDx_miR" class="btn btn-secondary">View Documentation</a>
+                </div>
+            </div>
+            <div class="hero-image">
+                <div class="terminal-window">
+                    <div class="terminal-header">
+                        <span class="dot red"></span>
+                        <span class="dot yellow"></span>
+                        <span class="dot green"></span>
+                    </div>
+                    <div class="terminal-body">
+                        <p class="command"><span class="prompt">$</span> python main.py --target_name "hsa-miR-21"</p>
+                        <p class="output">>>> Step 1: Initializing Sequence Pools...</p>
+                        <p class="output">>>> Step 2: Assembling Candidates...</p>
+                        <p class="output success">[SUCCESS] Selection of 10 candidates is ready.</p>
+                        <p class="output">>>> Step 3: Running NCBI BLAST Validation...</p>
+                        <p class="output success">[SUCCESS] CANDIDATE #1 IS VERIFIED AS SAFE.</p>
+                        <p class="cursor">_</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="features" class="features">
+        <div class="container">
+            <h2>Why PadDx_miR?</h2>
+            <div class="feature-grid">
+                <div class="feature-card">
+                    <div class="icon-box">
+                        <i class="fa-solid fa-microchip"></i>
+                    </div>
+                    <h3>Automated Design</h3>
+                    <p>Generates thousands of potential spacer and Cas12a core sequences instantly, optimized for your specific target miRNA.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="icon-box">
+                        <i class="fa-solid fa-filter"></i>
+                    </div>
+                    <h3>Rigorous Filtering</h3>
+                    <p>Advanced algorithms filter out candidates with homopolymers, hairpins, and cross-hybridization risks to ensure high performance.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="icon-box">
+                        <i class="fa-solid fa-shield-virus"></i>
+                    </div>
+                    <h3>NCBI Validation</h3>
+                    <p>Integrated BLAST validation automatically checks candidates against the human transcriptome to prevent off-target effects.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="usage" class="usage">
+        <div class="container">
+            <h2>Installation & Usage</h2>
+            <div class="usage-steps">
+                <div class="step">
+                    <h3>1. Clone the Repository</h3>
+                    <div class="code-block">
+                        <pre><code>git clone https://github.com/BKoo-Codes/PadDx_miR.git
+cd PadDx_miR</code></pre>
+                        <button class="copy-btn" onclick="copyToClipboard('git clone https://github.com/BKoo-Codes/PadDx_miR.git\ncd PadDx_miR')"><i class="fa-regular fa-copy"></i></button>
+                    </div>
+                </div>
+                <div class="step">
+                    <h3>2. Install Dependencies</h3>
+                    <div class="code-block">
+                        <pre><code>pip install -r requirements.txt</code></pre>
+                        <button class="copy-btn" onclick="copyToClipboard('pip install -r requirements.txt')"><i class="fa-regular fa-copy"></i></button>
+                    </div>
+                </div>
+                <div class="step">
+                    <h3>3. Run the Tool</h3>
+                    <div class="code-block">
+                        <pre><code>python main.py --target_name "hsa-miR-21-5p" \
+               --target_seq "UAGCUUAUCAGACUGAUGUUGA"</code></pre>
+                        <button class="copy-btn" onclick="copyToClipboard('python main.py --target_name &quot;hsa-miR-21-5p&quot; --target_seq &quot;UAGCUUAUCAGACUGAUGUUGA&quot;')"><i class="fa-regular fa-copy"></i></button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <footer>
+        <div class="container">
+            <p>&copy; 2026 PadDx_miR Team. Open source under MIT License.</p>
+            <div class="social-links">
+                <a href="#"><i class="fa-brands fa-github"></i></a>
+                <a href="#"><i class="fa-brands fa-twitter"></i></a>
+            </div>
+        </div>
+    </footer>
+
+    <script src="main.js"></script>
 </body>
 </html>
