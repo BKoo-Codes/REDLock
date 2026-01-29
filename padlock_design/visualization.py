@@ -58,12 +58,12 @@ def plot_structure(sequence, structure, title="Padlock Structure"):
     
     # Draw base labels inside nodes
     labels = {i: base for i, base in enumerate(sequence)}
-    # Modify labels for termini to include 5'-P and 3'-
+    # For termini, add labels on a new line to avoid overlap
     if n > 0:
-        labels[0] = "5'-P " + labels[0]
+        labels[0] = "5'-P\n" + labels[0]
     if n > 1: # Ensure there's a distinct last node
-        labels[n-1] = labels[n-1] + " 3'-"
-    nx.draw_networkx_labels(G, pos, labels, font_size=10, font_weight='bold', font_color='black')
+        labels[n-1] = labels[n-1] + "\n3'-"
+    nx.draw_networkx_labels(G, pos, labels, font_size=8, font_weight='bold', font_color='black', verticalalignment='center')
     
     # --- Annotation for Indices ---
     dist = 1.12  # Distance for number labels
