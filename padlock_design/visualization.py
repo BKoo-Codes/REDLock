@@ -58,15 +58,17 @@ def plot_structure(sequence, structure, title="Padlock Structure"):
     
     # Draw base labels inside nodes
     labels = {i: base for i, base in enumerate(sequence)}
+    # Modify labels for termini to include 5'-P and 3'-
+    if n > 0:
+        labels[0] = "5'-P " + labels[0]
+    if n > 1: # Ensure there's a distinct last node
+        labels[n-1] = labels[n-1] + " 3'-"
     nx.draw_networkx_labels(G, pos, labels, font_size=10, font_weight='bold', font_color='black')
     
-    # --- Annotation for Indices and Termini ---
+    # --- Annotation for Indices ---
     dist = 1.12  # Distance for number labels
     fontsize = 9 # Font size for number labels
     
-    termini_offset_x = 0.08 # How far to the left of the node's radial line
-    termini_offset_y = 0.06 # Vertical separation from node center
-
     for i in range(n):
         (x_node, y_node) = pos[i] # Position of the node
         is_first = (i == 0)
@@ -80,13 +82,9 @@ def plot_structure(sequence, structure, title="Padlock Structure"):
         if is_first:
             # Draw '1'
             plt.text(lbl_x, lbl_y, "1", ha='center', va='center', fontsize=fontsize, color='gray', weight='bold')
-            # Place 5'-P to the left of '1'
-            plt.text(lbl_x - termini_offset_x, lbl_y + termini_offset_y, "5'-P", ha='right', va='center', fontsize=12, color='black', weight='bold')
         elif is_last:
             # Draw 'n'
             plt.text(lbl_x, lbl_y, str(n), ha='center', va='center', fontsize=fontsize, color='gray', weight='bold')
-            # Place 3'- to the left of 'n'
-            plt.text(lbl_x - termini_offset_x, lbl_y - termini_offset_y, "3'-", ha='right', va='center', fontsize=12, color='black', weight='bold')
         elif is_milestone:
             plt.text(lbl_x, lbl_y, str(i + 1), ha='center', va='center', fontsize=fontsize, color='gray')
 
