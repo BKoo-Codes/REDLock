@@ -19,35 +19,54 @@ def print_split_report(res):
 
 def _get_seq_analysis_details(title, seq):
     """Helper to generate a formatted string for a single sequence analysis."""
+    if not seq or seq == "N/A":
+        return ""
+        
     gc_val = calculate_gc(seq)
     tm_val = tm_nn(seq)
     dg_val = calc_dg_nn(seq)
+    
+    report_title = f"===== [ {title} Analysis ] ====="
     return (
-        f"  [{title}]\n"
-        f"    Seq    : {seq}\n"
-        f"    Length : {len(seq)} nt\n"
-        f"    GC%    : {gc_val:.2f}%\n"
-        f"    Tm     : {f'{tm_val:.2f} °C' if tm_val is not None else 'N/A'}\n"
-        f"    ΔG     : {f'{dg_val:.2f} kcal/mol' if dg_val is not None else 'N/A'}\n"
+        f"{report_title}\n"
+        f"  Sequence          : {seq}\n"
+        f"  Length            : {len(seq)} nt\n"
+        f"  GC Content        : {gc_val:.2f}%\n"
+        f"  Melting Temp. (Tm): {f'{tm_val:.2f} °C' if tm_val is not None else 'N/A'}\n"
+        f"  Folding ΔG        : {f'{dg_val:.2f} kcal/mol' if dg_val is not None else 'N/A'}\n"
         f"--------------------------------------------------\n"
     )
 
 def _get_duplex_analysis_details(title, seq1, seq2, rnafold_path=None):
-    """Helper to generate a formatted string for a duplex analysis."""
+    """Helper to generate a more readable formatted string for a duplex analysis."""
+    if not all([seq1, seq2, seq1 != "N/A", seq2 != "N/A"]):
+        return ""
+
     _, duplex_dg = run_rnacofold(seq1, seq2)
     
-    # Basic info for each sequence
-    gc1, gc2 = calculate_gc(seq1), calculate_gc(seq2)
-    tm1, tm2 = tm_nn(seq1), tm_nn(seq2)
+    # --- Get names from title ---
+    try:
+        name1, name2 = title.split(' vs ')
+    except ValueError:
+        name1, name2 = "Seq1", "Seq2"
+
+    # --- Properties for Seq1 ---
+    gc1, tm1 = calculate_gc(seq1), tm_nn(seq1)
+    # --- Properties for Seq2 ---
+    gc2, tm2 = calculate_gc(seq2), tm_nn(seq2)
+
+    report_title = f"===== [ Interaction: {title} ] ====="
     
+    # Left-align names for clean layout
+    name1_padded = f"{name1}:".ljust(18)
+    name2_padded = f"{name2}:".ljust(18)
+
     return (
-        f"[{title}]\n"
-        f"  Seq1: {seq1}\n"
-        f"  Seq2: {seq2}\n"
-        f"  Length1: {len(seq1)}, Length2: {len(seq2)}\n"
-        f"  GC1: {gc1:.2f}%, GC2: {gc2:.2f}%\n"
-        f"  Tm1: {tm1:.2f}, Tm2: {tm2:.2f}\n"
-        f"  ViennaRNA Duplex ΔG: {duplex_dg if duplex_dg is not None else 'N/A'}\n\n"
+        f"{report_title}\n"
+        f"  - {name1_padded} {seq1} (Len: {len(seq1)}, GC: {gc1:.1f}%, Tm: {tm1:.1f}°C)\n"
+        f"  - {name2_padded} {seq2} (Len: {len(seq2)}, GC: {gc2:.1f}%, Tm: {tm2:.1f}°C)\n\n"
+        f"  > Predicted Binding Energy (ΔG): {duplex_dg if duplex_dg is not None else 'N/A'} kcal/mol\n"
+        f"--------------------------------------------------\n"
     )
 
 def generate_detailed_report(row):
