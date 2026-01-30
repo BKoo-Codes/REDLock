@@ -1,7 +1,8 @@
 import os
 import pandas as pd
 from datetime import datetime
-from .utils import calc_dg_nn, calculate_gc, tm_nn
+from .utils import calc_dg_nn, calculate_gc, tm_nn, rc
+from .thermo import run_rnacofold
 
 def print_split_report(res):
     report = f"""
@@ -15,6 +16,75 @@ def print_split_report(res):
      (GC={res['gc_r']:.1f}%, Tm={res['tm_r']:.1f}°C) -> Padlock 5' end: {res['mirna_right_rc']}
   ------------------------------------------------------------"""
     print(report)
+
+def _get_seq_analysis_details(title, seq):
+    """Helper to generate a formatted string for a single sequence analysis."""
+    gc_val = calculate_gc(seq)
+    tm_val = tm_nn(seq)
+    dg_val = calc_dg_nn(seq)
+    return (
+        f"  [{title}]\n"
+        f"    Seq    : {seq}\n"
+        f"    Length : {len(seq)} nt\n"
+        f"    GC%    : {gc_val:.2f}%\n"
+        f"    Tm     : {f'{tm_val:.2f} °C' if tm_val is not None else 'N/A'}\n"
+        f"    ΔG     : {f'{dg_val:.2f} kcal/mol' if dg_val is not None else 'N/A'}\n"
+        f"--------------------------------------------------\n"
+    )
+
+def _get_duplex_analysis_details(title, seq1, seq2, rnafold_path=None):
+    """Helper to generate a formatted string for a duplex analysis."""
+    _, duplex_dg = run_rnacofold(seq1, seq2)
+    
+    # Basic info for each sequence
+    gc1, gc2 = calculate_gc(seq1), calculate_gc(seq2)
+    tm1, tm2 = tm_nn(seq1), tm_nn(seq2)
+    
+    return (
+        f"[{title}]\n"
+        f"  Seq1: {seq1}\n"
+        f"  Seq2: {seq2}\n"
+        f"  Length1: {len(seq1)}, Length2: {len(seq2)}\n"
+        f"  GC1: {gc1:.2f}%, GC2: {gc2:.2f}%\n"
+        f"  Tm1: {tm1:.2f}, Tm2: {tm2:.2f}\n"
+        f"  ViennaRNA Duplex ΔG: {duplex_dg if duplex_dg is not None else 'N/A'}\n\n"
+    )
+
+def generate_detailed_report(row):
+    """
+    Generates a comprehensive, formatted string report for a single padlock candidate.
+    """
+    # Extract sequences, handling potential missing data
+    padlock_full = row.get("Padlock Sequence (5'-P)", "N/A")
+    padlock_seq = padlock_full.replace("[5'-P]-", "")
+    spacer_seq = row.get("Spacer (Pad)", "N/A")
+    cas12a_core_seq = row.get("Cas12a Core (Pad)", "N/A")
+    
+    mirna_seq = row.get("Target Sequence", "N/A")
+    mirna_left_rc = row.get("miRNA Left Arm (RC)", "N/A")
+    mirna_right_rc = row.get("miRNA Right Arm (RC)", "N/A")
+    
+    rca_product_seq = rc(padlock_seq)
+
+    # Start building the report string
+    report = ""
+
+    # --- Single Sequence Analyses ---
+    report += _get_seq_analysis_details("Full Padlock", padlock_seq)
+    report += _get_seq_analysis_details("Spacer", spacer_seq)
+    report += _get_seq_analysis_details("Cas12a Core", cas12a_core_seq)
+    
+    report += "\n" # Spacer
+
+    # --- Duplex Analyses ---
+    report += _get_duplex_analysis_details("Padlock vs Cas12a", padlock_seq, cas12a_core_seq)
+    report += _get_duplex_analysis_details("Padlock vs miRNA left", padlock_seq, mirna_left_rc)
+    report += _get_duplex_analysis_details("Padlock vs miRNA right", padlock_seq, mirna_right_rc)
+    report += _get_duplex_analysis_details("RCA Product vs Cas12a", rca_product_seq, cas12a_core_seq)
+    report += _get_duplex_analysis_details("RCA Product vs miRNA Sequence", rca_product_seq, mirna_seq)
+
+    return report
+
 
 def print_detailed_analysis(title, seq):
     """

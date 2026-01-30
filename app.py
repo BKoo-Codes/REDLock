@@ -11,6 +11,7 @@ from padlock_design.pipeline import (
     export_candidate_results
 )
 from padlock_design.visualization import plot_structure
+from padlock_design.reporter import generate_detailed_report
 
 # ... existing imports ...
 
@@ -320,24 +321,22 @@ if st.session_state.results is not None:
     with st.expander("🔍 Detailed Sequence View"):
         for i, row in df_res.iterrows():
             st.markdown(f"**#{row.get('Candidate ID', i+1)}**")
-            padlock_seq = row.get("Padlock Sequence (5'-P)", "N/A")
+            padlock_seq_full = row.get("Padlock Sequence (5'-P)", "N/A")
             structure = row.get("Secondary Structure", "")
             
+            # --- Column for main info and image ---
             col_det1, col_det2 = st.columns([2, 1])
             
             with col_det1:
-                st.code(f"Padlock: {padlock_seq}")
+                st.code(f"Padlock: {padlock_seq_full}")
                 st.text(f"Spacer: {row.get('Spacer (Pad)', 'N/A')} | Cas12a Core: {row.get('Cas12a Core (Pad)', 'N/A')}")
                 if structure:
                     st.text(f"Structure: {structure}")
             
             with col_det2:
-                if structure and padlock_seq != "N/A":
+                if structure and padlock_seq_full != "N/A":
                     try:
-                        # Clean sequence for visualization
-                        clean_seq = padlock_seq.replace("[5'-P]-", "")
-                        
-                        # Call plot_structure without regions
+                        clean_seq = padlock_seq_full.replace("[5'-P]-", "")
                         img_buf = plot_structure(
                             clean_seq, 
                             structure, 
@@ -345,6 +344,18 @@ if st.session_state.results is not None:
                         )
                         st.image(img_buf, caption="Predicted 2D Structure", use_container_width=True)
                     except Exception as e:
-                        st.error(f"Could not visualize structure: {e}")
+                        st.warning(f"Could not visualize structure: {e}")
+
+            # --- Full Analysis Report ---
+            st.markdown("---")
+            
+            # Generate and display the detailed report
+            report_str = generate_detailed_report(row)
+            st.text_area(
+                "Full Analysis Details", 
+                report_str, 
+                height=400,
+                key=f"report_{i}" # Unique key for each text area
+            )
             
             st.markdown("---")
