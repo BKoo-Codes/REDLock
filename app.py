@@ -351,11 +351,6 @@ if st.session_state.results is not None:
             
             # Generate and display the detailed report
             report_str = generate_detailed_report(row)
-            st.text_area(
-                "Full Analysis Details", 
-                report_str, 
-                height=400,
-                key=f"report_{i}" # Unique key for each text area
-            )
+            st.code(report_str)
             
             st.markdown("---")
