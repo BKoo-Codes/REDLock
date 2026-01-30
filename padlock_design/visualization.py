@@ -62,7 +62,7 @@ def plot_structure(sequence, structure, title="Padlock Structure"):
     
     # --- Annotation for Indices ---
     dist = 1.12  # Distance for number labels
-    fontsize = 9 # Font size for number labels
+    fontsize = 12 # Font size for number labels
     
     for i in range(n):
         (x_node, y_node) = pos[i] # Position of the node
@@ -83,7 +83,7 @@ def plot_structure(sequence, structure, title="Padlock Structure"):
         elif is_milestone:
             plt.text(lbl_x, lbl_y, str(i + 1), ha='center', va='center', fontsize=fontsize, color='gray')
 
-    plt.title(title, fontsize=15, fontweight='bold', pad=20)
+    plt.title(title, fontsize=25, fontweight='bold', pad=20)
     plt.axis('off')
     plt.tight_layout()
     
