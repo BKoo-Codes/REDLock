@@ -307,7 +307,11 @@ def validate_padlocks(spacer_pools, cas12a_pools, split_results, val_para,
             "miRNA 5' Arm (Pad)": candidate['mirna_left_rc'],
             "miRNA 5' Arm len": len(candidate['mirna_left_rc']),
             "miRNA 3' Arm (Pad)": candidate['mirna_right_rc'],
-            "miRNA 3' Arm len": len(candidate['mirna_right_rc'])
+            "miRNA 3' Arm len": len(candidate['mirna_right_rc']),
+            
+            # Add keys for reporter
+            "miRNA Left Arm (RC)": split_results['mirna_left_rc'],
+            "miRNA Right Arm (RC)": split_results['mirna_right_rc'],
         }
         
         results.append(final_entry)

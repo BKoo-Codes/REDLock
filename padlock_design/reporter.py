@@ -60,7 +60,7 @@ def generate_detailed_report(row):
     spacer_seq = row.get("Spacer (Pad)", "N/A")
     cas12a_core_seq = row.get("Cas12a Core (Pad)", "N/A")
     
-    mirna_seq = row.get("Target Sequence", "N/A")
+    mirna_seq = row.get("miRNA Sequence", "N/A")
     mirna_left_rc = row.get("miRNA Left Arm (RC)", "N/A")
     mirna_right_rc = row.get("miRNA Right Arm (RC)", "N/A")
     
