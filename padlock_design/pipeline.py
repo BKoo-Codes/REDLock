@@ -2,6 +2,9 @@ import pandas as pd
 import pickle
 import os
 import time
+import subprocess # Added for local BLAST
+import tempfile   # Added for local BLAST
+import io # Added for local BLAST XML parsing
 from Bio.Blast import NCBIWWW, NCBIXML
 from .filters import spacer_filter, cas12a_filter
 from .assembler import find_best_split, validate_padlocks, generate_candidates
@@ -148,6 +151,97 @@ def analyze_and_sort_padlocks(df, dg_threshold=-3.5, rnafold_path=None):
     
     return sorted_df
 
+def _run_local_blastn_and_parse(query_seq, label, blast_exe_path, blast_db_path, expect=100, word_size=7, hitlist_size=20, min_ident=0.90):
+    """
+    Executes local blastn and parses the XML output.
+    """
+    if not os.path.exists(blast_exe_path):
+        print(f"[ERROR] Local BLAST executable not found at: {blast_exe_path}")
+        return {"perfect": {}, "partial": {}, "contig": {}, "3prime": {}}
+    
+    # Check if blast_db_path is a directory or a file. For local blast, it expects
+    # the base name of the database, not necessarily the path to a .nhr/.nin/.nsq file.
+    # We can do a rudimentary check for existence of one of the files
+    db_exists = False
+    for ext in ['.nhr', '.nin', '.nsq']: # Common extensions for nucleotide BLAST databases
+        if os.path.exists(blast_db_path + ext):
+            db_exists = True
+            break
+    
+    if not db_exists:
+        print(f"[ERROR] Local BLAST database not found at: {blast_db_path}. Expecting files like {blast_db_path}.nhr, etc.")
+        return {"perfect": {}, "partial": {}, "contig": {}, "3prime": {}}
+
+    print(f"\n--- [{label}] | DB: {blast_db_path} (Local) ---")
+    print("Query sequence:", query_seq)
+
+    hits = {"perfect": {"RNA": [], "Genomic": [], "Other": []},
+            "partial": {"RNA": [], "Genomic": [], "Other": []},
+            "contig":  {"RNA": [], "Genomic": [], "Other": []},
+            "3prime":  {"RNA": [], "Genomic": [], "Other": []}}
+
+    # Use temporary files for query and output
+    with tempfile.NamedTemporaryFile(mode='w', delete=False, encoding='utf-8') as query_file, \
+         tempfile.NamedTemporaryFile(mode='r+', delete=False, encoding='utf-8') as output_file:
+        
+        query_file.write(f">query\n{query_seq}")
+        query_file_name = query_file.name
+        output_file_name = output_file.name
+
+    cmd = [
+        blast_exe_path,
+        "-query", query_file_name,
+        "-db", blast_db_path,
+        "-outfmt", "5",  # XML output
+        "-out", output_file_name,
+        "-expect", str(expect),
+        "-word_size", str(word_size),
+        "-max_target_seqs", str(hitlist_size),
+        "-task", "blastn-short" # Good for short sequences like oligos
+    ]
+
+    try:
+        subprocess.run(cmd, check=True, capture_output=True, text=True)
+        
+        with open(output_file_name, 'r', encoding='utf-8') as f:
+            blast_output = f.read()
+
+        if blast_output:
+            # Need to handle potential empty BLAST results XML which causes an error with NCBIXML.read
+            if "<Iteration>" not in blast_output: # Simple check if there are any hits
+                print(f"[INFO] No BLAST hits found for {label} in local database.")
+                return hits # Return empty hits if no iterations (no hits)
+
+            blast_record = NCBIXML.read(io.StringIO(blast_output))
+            for alignment in blast_record.alignments:
+                for hsp in alignment.hsps: # Corrected from blast_record.hsps
+                    cat = "RNA" # Simplified, could be improved with actual classification (e.g., from alignment.title)
+
+                    # Perfect Match
+                    if hsp.identities == len(query_seq) and hsp.align_length == len(query_seq):
+                        hits["perfect"][cat].append(alignment.title)
+
+                    # Partial Match (High Identity > min_ident)
+                    if hsp.align_length > 0:
+                        identity_ratio = hsp.identities / hsp.align_length
+                        if min_ident <= identity_ratio < 1.0:
+                            hits["partial"][cat].append(
+                                f"{alignment.title} (identity={identity_ratio:.2f}, mismatches={hsp.align_length-hsp.identities})"
+                            )
+    except subprocess.CalledProcessError as e:
+        print(f"[ERROR] Local BLAST command failed: {e.stderr}")
+    except Exception as e:
+        print(f"[ERROR] Local BLAST execution or parsing failed: {e}")
+    finally:
+        # Clean up temporary files
+        os.remove(query_file_name)
+        if os.path.exists(output_file_name): # Output file might not be created if subprocess fails early
+            os.remove(output_file_name)
+
+    return hits
+
+
+
 # NCBI BLAST Functions
 def classify_hit(title):
     if "PREDICTED" in title: return "Other"
@@ -229,19 +323,43 @@ def evaluate_candidate_safety(hits):
     is_safe = len(reasons) == 0
     return is_safe, reasons
 
-def run_blast_validation(sorted_results, target_count=5):
+def run_blast_validation(sorted_results, target_count=5, blast_mode="Online NCBI BLAST", blast_exe_path="", blast_db_path=""):
     passed_candidates = []
     
     for idx, row in sorted_results.iterrows():
         candidate_id = row.get('Candidate ID', idx + 1)
         print(f"\n{'='*30} [STARTING VALIDATION: CANDIDATE #{candidate_id}] {'='*30}")
 
+        # Determine which BLAST function to use
+        blast_func = None
+        if blast_mode == "Online NCBI BLAST":
+            blast_func = run_blastn_and_parse
+            print_msg = "Online NCBI BLAST"
+        elif blast_mode == "Local BLAST":
+            # Add a basic check for local BLAST path existence before passing the lambda
+            # A more robust check for database integrity would involve blastdbcmd, which is out of scope for now
+            blast_db_base_path = blast_db_path # blast_db_path is expected to be the base name for the DB, not including .nhr etc.
+            if not os.path.exists(blast_exe_path) or \
+               (not os.path.exists(blast_db_base_path + '.nhr') and \
+                not os.path.exists(blast_db_base_path + '.nin') and \
+                not os.path.exists(blast_db_base_path + '.nsq')):
+                print(f"[ERROR] Local BLAST paths invalid for candidate {candidate_id}. Executable: {blast_exe_path}, DB: {blast_db_base_path}. Skipping local BLAST for this candidate.")
+                continue # Skip this candidate
+                
+            blast_func = lambda query_seq, label: _run_local_blastn_and_parse(
+                query_seq, label, blast_exe_path, blast_db_path
+            )
+            print_msg = "Local BLAST"
+        else: # Should not happen if blast_mode is properly controlled
+            print("[ERROR] Invalid BLAST mode specified. Skipping BLAST validation.")
+            return sorted_results.to_dict('records') # Return all as passed if mode is invalid
+
         # STEP 1: Validate CAS12A Core first
         cas_name = f"CAS12A_CORE_#{candidate_id}"
         cas_seq = row['Cas12a Core (Pad)']
         
-        print(f"▶ STEP 1: Running BLAST for {cas_name}...")
-        cas_hits = run_blastn_and_parse(cas_seq, cas_name, db="refseq_rna")
+        print(f"▶ STEP 1: Running {print_msg} for {cas_name}...")
+        cas_hits = blast_func(cas_seq, cas_name)
         is_cas_safe, cas_reasons = evaluate_candidate_safety(cas_hits)
 
         if not is_cas_safe:
@@ -253,8 +371,8 @@ def run_blast_validation(sorted_results, target_count=5):
         spacer_name = f"SPACER_#{candidate_id}"
         spacer_seq = row['Spacer (Pad)']
         
-        print(f"▶ STEP 2: Running BLAST for {spacer_name}...")
-        spacer_hits = run_blastn_and_parse(spacer_seq, spacer_name, db="refseq_rna")
+        print(f"▶ STEP 2: Running {print_msg} for {spacer_name}...")
+        spacer_hits = blast_func(spacer_seq, spacer_name)
         is_spacer_safe, spacer_reasons = evaluate_candidate_safety(spacer_hits)
 
         if not is_spacer_safe:
@@ -270,6 +388,7 @@ def run_blast_validation(sorted_results, target_count=5):
             print(f"\n[INFO] TARGET COUNT ({target_count}) REACHED. TERMINATING VALIDATION PROCESS.")
             break
 
-        time.sleep(2) # Rate limiting
-        
+        if blast_mode == "Online NCBI BLAST":
+            time.sleep(2) # Rate limiting for online BLAST
+
     return passed_candidates

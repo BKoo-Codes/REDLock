@@ -144,10 +144,31 @@ with st.sidebar:
         else:
             st.error("❌ File not found at this path.")
 
-    skip_blast = st.checkbox("Skip NCBI BLAST (Faster)", value=False, help="Skip the time-consuming NCBI BLAST step.")
-    
-    # ... existing settings ...
+    st.markdown("---")
+    st.markdown("### 💥 BLAST Validation")
+    blast_mode = st.radio(
+        "Select BLAST Mode",
+        options=["Online NCBI BLAST", "Local BLAST", "Skip BLAST"],
+        index=0, # Default to Online NCBI BLAST
+        help="Choose how to validate candidates against off-target sequences."
+    )
 
+    blast_exe_path = ""
+    blast_db_path = ""
+
+    if blast_mode == "Local BLAST":
+        st.info("For local BLAST, you need to have NCBI BLAST+ installed and a local database prepared.")
+        blast_exe_path = st.text_input(
+            "Local BLAST Executable Path",
+            value="",
+            help="Full path to the blastn executable (e.g., C:\\blast\\bin\\blastn.exe)"
+        )
+        blast_db_path = st.text_input(
+            "Local BLAST Database Path",
+            value="",
+            help="Full path to your local BLAST database (e.g., C:\\blast\\db\\nt)"
+        )
+        
     st.markdown("---")
     run_btn = st.button("🚀 Run Design", type="primary")
 
@@ -255,11 +276,16 @@ if run_btn:
 
             # Step 4: BLAST
             final_candidates_list = []
-            if not skip_blast:
-                st.write("Running NCBI BLAST validation (this may take a while)...")
+            if blast_mode != "Skip BLAST":
+                st.write(f"Running {blast_mode} validation (this may take a while)...")
                 
-                # Re-importing to ensure we use the function correctly
-                final_candidates_list = run_blast_validation(sorted_df, target_count=num_candidates)
+                final_candidates_list = run_blast_validation(
+                    sorted_df, 
+                    target_count=num_candidates, 
+                    blast_mode=blast_mode,
+                    blast_exe_path=blast_exe_path,
+                    blast_db_path=blast_db_path
+                )
                 
                 if not final_candidates_list:
                     st.warning("No candidates passed BLAST validation.")
