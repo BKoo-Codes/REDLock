@@ -1,9 +1,13 @@
-name: Build Windows Executable
+name: Build & Release EXE
 
 on:
   push:
-    branches: [ "main" ]
-  workflow_dispatch:
+    tags:
+      - "v*"            # push a tag (v1.0.1 ...) -> builds and publishes a PERMANENT Release
+  workflow_dispatch:     # lets you run a test build manually from the Actions tab
+
+permissions:
+  contents: write        # required so the workflow can create/update a Release
 
 jobs:
   build:
@@ -26,10 +30,19 @@ jobs:
 
     - name: Build Executable with PyInstaller
       run: |
-        pyinstaller --onefile --collect-all streamlit --collect-all altair --collect-all pandas --collect-all Bio --collect-all matplotlib --hidden-import=Bio --hidden-import=Bio.Seq --add-data "app.py;." --add-data "padlock_design;padlock_design" --name PadDx_miR_Tool --clean run_gui.py
+        pyinstaller --onefile --collect-all streamlit --collect-all altair --collect-all pandas --collect-all Bio --collect-all matplotlib --hidden-import=Bio --hidden-import=Bio.Seq --add-data "app.py;." --add-data "padlock_design;padlock_design" --add-data ".streamlit;.streamlit" --name PadDx_miR_Tool --clean run_gui.py
 
-    - name: Upload Artifact
+    # Temporary copy for quick testing (auto-deletes after 7 days) — optional
+    - name: Upload test artifact
       uses: actions/upload-artifact@v4
       with:
         name: PadDx_miR_Tool_Windows
         path: dist/PadDx_miR_Tool.exe
+        retention-days: 7
+
+    # Permanent download link — only runs when a version tag triggered the workflow
+    - name: Publish to Release (never expires)
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: softprops/action-gh-release@v2
+      with:
+        files: dist/PadDx_miR_Tool.exe

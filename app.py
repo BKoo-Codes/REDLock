@@ -26,33 +26,77 @@ st.set_page_config(
 # Custom CSS for better styling
 st.markdown("""
 <style>
-    .main {
-        background-color: #f8f9fa;
+    @import url('https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+
+    :root{
+        --cyan:#22d3ee; --signal:#3ef2b3; --violet:#9b7bff; --magenta:#ec5fd0; --coral:#ff6f6f;
+        --line:rgba(255,255,255,.09);
     }
-    .stButton>button {
-        width: 100%;
-        background-color: #4CAF50;
-        color: white;
-        font-weight: bold;
-        border-radius: 8px;
-        padding: 0.5rem 1rem;
+
+    /* ---- App background: deep base + drifting colour glows ---- */
+    .stApp{
+        background:
+            radial-gradient(1000px 700px at 12% -8%, rgba(34,211,238,.10), transparent 60%),
+            radial-gradient(900px 700px at 92% 2%, rgba(155,123,255,.14), transparent 60%),
+            radial-gradient(800px 800px at 65% 112%, rgba(236,95,208,.10), transparent 60%),
+            #080b16;
+        font-family:'Inter',sans-serif;
+        color:#eaf0ff;
     }
-    .stButton>button:hover {
-        background-color: #45a049;
-        color: white;
+    .stApp h1,.stApp h2,.stApp h3,.stApp h4{font-family:'Sora',sans-serif;letter-spacing:-.02em;color:#eaf0ff}
+
+    /* ---- Custom hero banner ---- */
+    .pd-hero{
+        border:1px solid var(--line);border-radius:18px;padding:22px 26px;margin-bottom:10px;
+        background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.015));
+        box-shadow:0 0 55px -22px rgba(62,242,179,.4);
     }
-    h1 {
-        color: #2c3e50;
+    .pd-hero h1{margin:0;font-size:1.95rem;font-weight:800}
+    .pd-hero p{margin:.45rem 0 0;color:#93a0c4;font-size:.98rem}
+    .pd-grad{background:linear-gradient(115deg,#5eead4,#38bdf8 40%,#a78bfa 72%,#f0abfc);
+        -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+
+    /* ---- Sidebar ---- */
+    [data-testid="stSidebar"]{background:#0b0f20;border-right:1px solid var(--line)}
+
+    /* ---- Buttons (gradient + glow) ---- */
+    .stButton>button,.stDownloadButton>button{
+        width:100%;border:1px solid rgba(34,211,238,.5);border-radius:10px;font-weight:700;
+        color:#06141c;background:linear-gradient(120deg,#2ee6cf,#38bdf8 50%,#9b7bff);
+        box-shadow:0 8px 24px -10px rgba(56,189,248,.7);transition:transform .15s,box-shadow .2s;
     }
-    h2, h3 {
-        color: #34495e;
+    .stButton>button:hover,.stDownloadButton>button:hover{
+        transform:translateY(-2px);box-shadow:0 12px 32px -8px rgba(56,189,248,.95);color:#06141c;
     }
-    .stDataFrame {
-        background-color: white;
-        border-radius: 10px;
-        padding: 10px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+
+    /* ---- Inputs ---- */
+    .stTextInput input,.stTextArea textarea,.stNumberInput input{
+        background:rgba(255,255,255,.04)!important;border:1px solid var(--line)!important;
+        color:#eaf0ff!important;border-radius:8px!important;
     }
+
+    /* ---- Metrics ---- */
+    [data-testid="stMetric"]{
+        background:linear-gradient(180deg,rgba(255,255,255,.055),rgba(255,255,255,.02));
+        border:1px solid var(--line);border-radius:14px;padding:14px 16px;
+    }
+    [data-testid="stMetricValue"]{color:#3ef2b3}
+
+    /* ---- DataFrame ---- */
+    .stDataFrame{border:1px solid var(--line);border-radius:12px;overflow:hidden;
+        box-shadow:0 10px 30px -18px rgba(0,0,0,.8)}
+
+    /* ---- Expander ---- */
+    [data-testid="stExpander"]{border:1px solid var(--line)!important;border-radius:12px!important;
+        background:rgba(255,255,255,.02)}
+
+    /* ---- Code blocks ---- */
+    .stApp pre,.stApp code{background:rgba(3,6,16,.65)!important}
+    .stApp code{color:#3ef2b3}
+
+    /* ---- Misc accents ---- */
+    hr{border-color:var(--line)}
+    a{color:#38bdf8}
 </style>
 """, unsafe_allow_html=True)
 
@@ -173,8 +217,12 @@ with st.sidebar:
     run_btn = st.button("🚀 Run Design", type="primary")
 
 # Main Content
-st.title("🧬 PadDx_miR Padlock Design Tool")
-st.markdown("### Automated design pipeline for RCA-based CRISPR-Cas12a detection systems.")
+st.markdown("""
+<div class="pd-hero">
+  <h1>🧬 Pad<span class="pd-grad">Dx</span>_miR — Padlock Design Studio</h1>
+  <p>Automated design pipeline for RCA-based CRISPR-Cas12a miRNA detection.</p>
+</div>
+""", unsafe_allow_html=True)
 
 if "results" not in st.session_state:
     st.session_state.results = None

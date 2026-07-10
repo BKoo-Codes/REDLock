@@ -1,151 +1,482 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PadDx_miR | Advanced Padlock Probe Design Tool</title>
-    <meta name="description" content="A powerful Python-based tool for designing and validating padlock probes for miRNA detection using RCA and CRISPR-Cas12a.">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="style.css">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PadDx_miR · Padlock Probe Design for miRNA Detection</title>
+<meta name="description" content="Automated design and validation of padlock probes for miRNA detection with RCA and CRISPR-Cas12a. Built at CMDx Lab, Hallym University.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#080b16;
+  --bg-2:#0b0f20;
+  --line:rgba(255,255,255,.09);
+  --line-strong:rgba(255,255,255,.18);
+  --text:#eaf0ff;
+  --muted:#93a0c4;
+  --cyan:#22d3ee;
+  --signal:#3ef2b3;   /* Cas12a fluorescence */
+  --violet:#9b7bff;
+  --magenta:#ec5fd0;
+  --coral:#ff6f6f;
+  --grad-cta:linear-gradient(120deg,#2ee6cf,#38bdf8 45%,#9b7bff);
+  --grad-text:linear-gradient(115deg,#5eead4,#38bdf8 38%,#a78bfa 70%,#f0abfc);
+  --grad-line:linear-gradient(90deg,transparent,#22d3ee,#9b7bff,#ec5fd0,transparent);
+  --font-display:'Sora',sans-serif;
+  --font-body:'Inter',sans-serif;
+  --font-mono:'JetBrains Mono',monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  font-family:var(--font-body);
+  background:var(--bg);color:var(--text);line-height:1.65;
+  -webkit-font-smoothing:antialiased;overflow-x:hidden;
+}
+.container{max-width:1160px;margin:0 auto;padding:0 24px}
+a{color:inherit;text-decoration:none}
+h1,h2,h3{font-family:var(--font-display);font-weight:700;letter-spacing:-.02em;line-height:1.1}
+.mono{font-family:var(--font-mono)}
+.grad-text{background:var(--grad-text);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.eyebrow{
+  display:inline-flex;align-items:center;gap:8px;
+  font-family:var(--font-mono);font-size:.74rem;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--cyan);font-weight:500;
+}
+.eyebrow::before{content:"";width:22px;height:1px;background:linear-gradient(90deg,var(--cyan),transparent)}
+
+/* ---------- Ambient background ---------- */
+.bg-fx{position:fixed;inset:0;z-index:-2;
+  background:
+    radial-gradient(1100px 700px at 12% -8%,rgba(34,211,238,.12),transparent 60%),
+    radial-gradient(1000px 720px at 92% 4%,rgba(155,123,255,.16),transparent 60%),
+    radial-gradient(900px 800px at 60% 108%,rgba(236,95,208,.12),transparent 60%),
+    var(--bg);
+}
+.orb{position:absolute;border-radius:50%;filter:blur(80px);opacity:.55;mix-blend-mode:screen}
+.orb.a{width:420px;height:420px;background:#12b3d6;top:-80px;left:-60px;animation:drift1 18s ease-in-out infinite}
+.orb.b{width:480px;height:480px;background:#7c4dff;top:40px;right:-100px;animation:drift2 22s ease-in-out infinite}
+.orb.c{width:360px;height:360px;background:#d838b8;bottom:-120px;left:35%;animation:drift3 26s ease-in-out infinite}
+@keyframes drift1{50%{transform:translate(60px,50px) scale(1.1)}}
+@keyframes drift2{50%{transform:translate(-50px,60px) scale(1.08)}}
+@keyframes drift3{50%{transform:translate(40px,-40px) scale(1.12)}}
+.grid-overlay{position:fixed;inset:0;z-index:-1;pointer-events:none;
+  background-image:linear-gradient(rgba(255,255,255,.028) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.028) 1px,transparent 1px);
+  background-size:46px 46px;
+  -webkit-mask:radial-gradient(1000px 700px at 50% 8%,#000,transparent 78%);
+          mask:radial-gradient(1000px 700px at 50% 8%,#000,transparent 78%);
+}
+@media (prefers-reduced-motion:reduce){.orb{animation:none}}
+
+/* ---------- Header ---------- */
+header{position:fixed;top:0;width:100%;z-index:100;
+  background:rgba(8,11,22,.6);backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}
+nav{display:flex;align-items:center;justify-content:space-between;height:66px}
+.logo{display:flex;align-items:center;gap:11px;font-family:var(--font-display);font-weight:800;font-size:1.16rem}
+.logo .mark{width:32px;height:32px;flex:0 0 32px;filter:drop-shadow(0 0 6px rgba(62,242,179,.5))}
+.nav-links{display:flex;align-items:center;gap:28px;list-style:none}
+.nav-links a{color:var(--muted);font-weight:500;font-size:.93rem;transition:color .2s}
+.nav-links a:hover{color:var(--text)}
+.nav-cta{display:inline-flex;align-items:center;gap:8px;color:#9bf3ff;font-weight:700;font-size:.88rem;
+  padding:9px 16px;border-radius:10px;background:rgba(34,211,238,.12);border:1px solid rgba(34,211,238,.6);
+  box-shadow:0 0 20px -6px rgba(34,211,238,.6);transition:transform .18s,box-shadow .2s,background .2s,color .2s}
+.nav-cta:hover{transform:translateY(-1px);color:#eafffe;background:rgba(34,211,238,.22);box-shadow:0 0 28px -4px rgba(34,211,238,.9)}
+.hamburger{display:none;background:none;border:0;cursor:pointer;color:var(--text)}
+
+/* ---------- Hero ---------- */
+.hero{padding:140px 0 84px}
+.hero-grid{display:grid;grid-template-columns:1.05fr 1fr;gap:52px;align-items:center}
+.hero h1{font-size:3.35rem;font-weight:800;margin:18px 0 20px}
+.hero .lead{font-size:1.14rem;color:var(--muted);max-width:34ch;margin-bottom:24px}
+.target-chip{display:inline-flex;align-items:center;gap:12px;flex-wrap:wrap;
+  background:rgba(255,255,255,.04);border:1px solid var(--line);border-radius:12px;
+  padding:10px 15px;margin-bottom:30px;position:relative;overflow:hidden}
+.target-chip::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--coral);box-shadow:0 0 14px var(--coral)}
+.target-chip .k{font-family:var(--font-mono);font-size:.68rem;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);padding-left:6px}
+.target-chip .v{font-family:var(--font-mono);font-size:.88rem}
+.target-chip .seq{color:var(--coral)}
+.hero-btns{display:flex;gap:14px;flex-wrap:wrap}
+.btn{display:inline-flex;align-items:center;gap:9px;padding:13px 24px;border-radius:12px;font-weight:700;font-size:.98rem;transition:transform .18s,box-shadow .22s,border-color .2s}
+.btn-primary{background:var(--grad-cta);color:#05121a;box-shadow:0 10px 30px -8px rgba(56,189,248,.65)}
+.btn-primary:hover{transform:translateY(-2px);box-shadow:0 16px 40px -8px rgba(56,189,248,.85)}
+.btn-ghost{background:rgba(255,255,255,.03);color:var(--text);border:1px solid var(--line-strong)}
+.btn-ghost:hover{transform:translateY(-2px);border-color:var(--violet);box-shadow:0 0 24px -6px rgba(155,123,255,.7)}
+
+/* ---------- Signature figure ---------- */
+.figure-wrap{position:relative;border-radius:22px;padding:16px 12px 8px;
+  background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.015));
+  border:1px solid var(--line);backdrop-filter:blur(10px);
+  box-shadow:0 30px 80px -30px rgba(0,0,0,.8),0 0 60px -20px rgba(62,242,179,.25)}
+.figure-wrap::after{content:"";position:absolute;inset:-1px;border-radius:22px;padding:1px;
+  background:var(--grad-line);-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
+  -webkit-mask-composite:xor;mask-composite:exclude;opacity:.7;pointer-events:none}
+.figure-wrap .cap{font-family:var(--font-mono);font-size:.7rem;color:var(--muted);letter-spacing:.06em;padding:4px 8px 2px;display:flex;justify-content:space-between}
+.padlock-svg{width:100%;height:auto;display:block}
+.bp{stroke:rgba(198,242,255,.92);stroke-width:2.6;stroke-linecap:round}
+.lbl{font-family:var(--font-display);font-weight:700;fill:#eaf0ff;paint-order:stroke;stroke:#080b16;stroke-width:4px;stroke-linejoin:round}
+.lbl-sm{font-size:15px}
+.lbl-core{font-size:16.5px;fill:#8ff9d6}
+.leader{stroke:rgba(255,255,255,.28);stroke-width:1.2}
+.end-mark{font-family:var(--font-mono);font-size:12px;fill:var(--muted)}
+@media (prefers-reduced-motion:no-preference){
+  .bp{animation:bpPulse 3.4s ease-in-out infinite}
+  .bp:nth-child(2n){animation-delay:.4s}.bp:nth-child(3n){animation-delay:.9s}
+  @keyframes bpPulse{0%,100%{opacity:.3}50%{opacity:1}}
+  .rca-run{stroke-dasharray:24 320;animation:rca 5.5s linear infinite}
+  @keyframes rca{to{stroke-dashoffset:-344}}
+  .pulse-ring{transform-origin:290px 72px;animation:pring 3s ease-out infinite}
+  .pulse-ring.d2{animation-delay:1.5s}
+  @keyframes pring{0%{transform:scale(.3);opacity:.9}80%,100%{transform:scale(1.9);opacity:0}}
+  .core-flick{animation:flick 3s ease-in-out infinite}
+  @keyframes flick{0%,100%{opacity:.85}50%{opacity:1}}
+}
+
+/* ---------- Section shell ---------- */
+section{padding:92px 0;position:relative}
+.divider{height:1px;background:var(--grad-line);opacity:.5;max-width:1160px;margin:0 auto}
+.sec-head{max-width:660px;margin-bottom:50px}
+.sec-head h2{font-size:2.35rem;margin:14px 0 12px}
+.sec-head p{color:var(--muted);font-size:1.05rem}
+
+/* ---------- Cards (glass) ---------- */
+.steps{display:grid;grid-template-columns:repeat(5,1fr);gap:16px}
+.card{position:relative;border-radius:16px;padding:22px 20px;
+  background:linear-gradient(180deg,rgba(255,255,255,.055),rgba(255,255,255,.02));
+  border:1px solid var(--line);backdrop-filter:blur(8px);
+  transition:transform .28s,border-color .28s,box-shadow .28s}
+.card:hover{transform:translateY(-6px);border-color:var(--line-strong)}
+.step .num{font-family:var(--font-mono);font-size:1.5rem;font-weight:500;background:var(--grad-text);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.step h3{font-size:1.05rem;margin:8px 0 8px}
+.step p{font-size:.9rem;color:var(--muted)}
+.step .tools{margin-top:12px;font-family:var(--font-mono);font-size:.7rem;color:var(--cyan);border-top:1px solid var(--line);padding-top:10px}
+.step:hover{box-shadow:0 20px 50px -24px rgba(34,211,238,.6)}
+
+.feature-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:20px}
+.f-card{padding:28px 26px}
+.f-card:hover{box-shadow:0 24px 60px -26px rgba(155,123,255,.65)}
+.f-ico{width:46px;height:46px;border-radius:13px;display:flex;align-items:center;justify-content:center;margin-bottom:16px;
+  background:rgba(34,211,238,.1);border:1px solid rgba(34,211,238,.28);box-shadow:inset 0 0 18px -6px rgba(34,211,238,.5)}
+.f-card:nth-child(2) .f-ico{background:rgba(62,242,179,.1);border-color:rgba(62,242,179,.3);box-shadow:inset 0 0 18px -6px rgba(62,242,179,.5)}
+.f-card:nth-child(3) .f-ico{background:rgba(155,123,255,.1);border-color:rgba(155,123,255,.3);box-shadow:inset 0 0 18px -6px rgba(155,123,255,.5)}
+.f-card:nth-child(4) .f-ico{background:rgba(236,95,208,.1);border-color:rgba(236,95,208,.3);box-shadow:inset 0 0 18px -6px rgba(236,95,208,.5)}
+.f-card h3{font-size:1.16rem;margin-bottom:9px}
+.f-card p{color:var(--muted);font-size:.95rem}
+.f-card code{font-family:var(--font-mono);font-size:.8rem;color:var(--signal);background:rgba(62,242,179,.08);padding:1px 6px;border-radius:5px}
+
+/* ---------- Install ---------- */
+.install-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.code-card{overflow:hidden;padding:0}
+.code-card .ch{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--line)}
+.code-card .ch h3{font-size:1rem}
+.code-card .ch .tag{font-family:var(--font-mono);font-size:.68rem;color:var(--cyan);text-transform:uppercase;letter-spacing:.1em}
+.code-body{position:relative;background:rgba(3,6,16,.6)}
+.code-body pre{margin:0;padding:18px 16px;overflow-x:auto}
+.code-body code{font-family:var(--font-mono);font-size:.85rem;color:#cfe0ff;line-height:1.75}
+.code-body .tok{color:var(--signal)}
+.code-body .str{color:#ffb4a2}
+.copy-btn{position:absolute;top:10px;right:10px;background:rgba(255,255,255,.08);border:1px solid var(--line);color:#cfe0ff;font-family:var(--font-mono);font-size:.7rem;padding:5px 10px;border-radius:7px;cursor:pointer;transition:background .2s,color .2s}
+.copy-btn:hover{background:rgba(255,255,255,.16)}
+.copy-btn.done{color:var(--signal);border-color:rgba(62,242,179,.5)}
+
+/* ---------- Footer ---------- */
+footer{border-top:1px solid var(--line);padding:56px 0 34px;background:linear-gradient(180deg,transparent,rgba(155,123,255,.05))}
+.foot-grid{display:flex;justify-content:space-between;gap:40px;flex-wrap:wrap;margin-bottom:32px}
+.foot-brand p{color:var(--muted);font-size:.9rem;max-width:38ch;margin-top:12px}
+.foot-col h4{font-family:var(--font-display);font-size:.76rem;letter-spacing:.14em;text-transform:uppercase;color:var(--cyan);margin-bottom:13px}
+.foot-col a{display:block;color:var(--muted);font-size:.92rem;margin-bottom:9px;transition:color .2s}
+.foot-col a:hover{color:var(--text)}
+.foot-bottom{border-top:1px solid var(--line);padding-top:20px;font-size:.82rem;color:var(--muted);display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px}
+
+/* reveal */
+.reveal{opacity:0;transform:translateY(20px);transition:opacity .6s ease,transform .6s ease}
+.reveal.in{opacity:1;transform:none}
+@media (prefers-reduced-motion:reduce){.reveal{opacity:1;transform:none;transition:none}}
+
+@media (max-width:940px){
+  .hero-grid{grid-template-columns:1fr;gap:40px}
+  .hero h1{font-size:2.7rem}
+  .steps{grid-template-columns:repeat(2,1fr)}
+  .install-grid,.feature-grid{grid-template-columns:1fr}
+}
+@media (max-width:640px){
+  .nav-links{position:absolute;top:66px;left:0;right:0;background:var(--bg-2);flex-direction:column;gap:0;padding:8px 24px 18px;border-bottom:1px solid var(--line);display:none}
+  .nav-links.open{display:flex}
+  .nav-links li{width:100%;padding:9px 0}
+  .hamburger{display:block}
+  .hero h1{font-size:2.25rem}
+  .steps{grid-template-columns:1fr}
+}
+</style>
 </head>
 <body>
-    <header>
-        <div class="container">
-            <nav>
-                <div class="logo">
-                    <i class="fa-solid fa-dna"></i> PadDx_miR
-                </div>
-                <ul class="nav-links">
-                    <li><a href="#features">Features</a></li>
-                    <li><a href="#usage">Usage</a></li>
-                    <li><a href="#contact">Contact</a></li>
-                    <li><a href="https://github.com/BKoo-Codes/PadDx_miR" target="_blank" class="btn-github"><i class="fa-brands fa-github"></i> GitHub</a></li>
-                </ul>
-            </nav>
+<div class="bg-fx"><span class="orb a"></span><span class="orb b"></span><span class="orb c"></span></div>
+<div class="grid-overlay"></div>
+
+<header>
+  <div class="container">
+    <nav>
+      <a href="#top" class="logo" aria-label="PadDx_miR home">
+        <svg class="mark" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+          <circle cx="16" cy="16" r="14" stroke="#22d3ee" stroke-width="2.4"/>
+          <path d="M16 4 C9 9 9 14 16 16 C23 18 23 23 16 28" stroke="#3ef2b3" stroke-width="2.4" stroke-linecap="round"/>
+          <circle cx="16" cy="16" r="3" fill="#9b7bff"/>
+        </svg>
+        <span>Pad<span class="grad-text">Dx</span>_miR</span>
+      </a>
+      <ul class="nav-links" id="navlinks">
+        <li><a href="#pipeline">Pipeline</a></li>
+        <li><a href="#features">Design rules</a></li>
+        <li><a href="#install">Install</a></li>
+        <li><a href="https://sites.google.com/view/cmdxlab-hallym/home" target="_blank" rel="noopener">CMDx Lab</a></li>
+        <li><a href="https://github.com/BKoo-Codes/PadDx_miR" target="_blank" rel="noopener" class="nav-cta">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8a8 8 0 0 0 5.47 7.59c.4.07.55-.17.55-.38v-1.32c-2.23.48-2.7-1.07-2.7-1.07-.36-.93-.89-1.18-.89-1.18-.73-.5.05-.49.05-.49.81.06 1.23.83 1.23.83.72 1.23 1.88.87 2.34.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.03 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.28.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48v2.2c0 .21.15.46.55.38A8 8 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+          GitHub
+        </a></li>
+      </ul>
+      <button class="hamburger" id="hamburger" aria-label="Menu">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      </button>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+  <!-- HERO -->
+  <section class="hero">
+    <div class="container hero-grid">
+      <div class="hero-content">
+        <span class="eyebrow">CMDx Lab · Hallym University</span>
+        <h1>Padlock probes for <span class="grad-text">miRNA detection</span>, glowing on cue</h1>
+        <p class="lead">From a target miRNA to ranked, sequence-validated probes for RCA and CRISPR-Cas12a fluorescence readout.</p>
+        <div class="target-chip">
+          <span class="k">target</span>
+          <span class="v">hsa-miR-21-5p</span>
+          <span class="v seq">5′-UAGCUUAUCAGACUGAUGUUGA-3′</span>
         </div>
-    </header>
-
-    <main>
-        <section class="hero">
-            <div class="container">
-                <div class="hero-content">
-                    <h1>Design Perfect <span class="highlight">Padlock Probes</span> <br>for miRNA Detection</h1>
-                    <p>Automated design pipeline for RCA-based CRISPR-Cas12a detection systems. 
-                       Optimize specificity, stability, and efficiency in seconds.</p>
-                    <div class="hero-btns">
-                        <a href="#usage" class="btn btn-primary">Get Started</a>
-                        <a href="https://github.com/BKoo-Codes/PadDx_miR" target="_blank" class="btn btn-secondary">View Documentation</a>
-                    </div>
-                </div>
-                <div class="hero-image">
-                    <div class="terminal-window">
-                        <div class="terminal-header">
-                            <span class="dot red"></span>
-                            <span class="dot yellow"></span>
-                            <span class="dot green"></span>
-                        </div>
-                        <div class="terminal-body">
-                            <p class="command"><span class="prompt">$</span> python main.py --target_name "hsa-miR-21"</p>
-                            <p class="output">>>> Step 1: Initializing Sequence Pools...</p>
-                            <p class="output">>>> Step 2: Assembling Candidates...</p>
-                            <p class="output success">[SUCCESS] Selection of 10 candidates is ready.</p>
-                            <p class="output">>>> Step 3: Running NCBI BLAST Validation...</p>
-                            <p class="output success">[SUCCESS] CANDIDATE #1 IS VERIFIED AS SAFE.</p>
-                            <p class="cursor">_</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </section>
-
-        <section id="features" class="features">
-            <div class="container">
-                <h2>Why PadDx_miR?</h2>
-                <div class="feature-grid">
-                    <div class="feature-card">
-                        <div class="icon-box"><i class="fa-solid fa-microchip"></i></div>
-                        <h3>Automated Design</h3>
-                        <p>Generates thousands of potential spacer and Cas12a core sequences instantly, optimized for your specific target miRNA.</p>
-                    </div>
-                    <div class="feature-card">
-                        <div class="icon-box"><i class="fa-solid fa-filter"></i></div>
-                        <h3>Rigorous Filtering</h3>
-                        <p>Advanced algorithms filter out candidates with homopolymers, hairpins, and cross-hybridization risks to ensure high performance.</p>
-                    </div>
-                    <div class="feature-card">
-                        <div class="icon-box"><i class="fa-solid fa-shield-virus"></i></div>
-                        <h3>NCBI Validation</h3>
-                        <p>Integrated BLAST validation automatically checks candidates against the human transcriptome to prevent off-target effects.</p>
-                    </div>
-                    <div class="feature-card">
-                        <div class="icon-box"><i class="fa-solid fa-eye"></i></div>
-                        <h3>Detailed Visualization</h3>
-                        <p>New interactive plots show color-coded regions (miRNA arms, spacer), a clear 5'/3' gap, and a legend for at-a-glance analysis.</p>
-                    </div>
-                </div>
-            </div>
-        </section>
-
-        <section id="usage" class="usage">
-            <div class="container">
-                <h2>Installation & Usage</h2>
-                <div class="usage-steps">
-                    <div class="step">
-                        <h3>1. Clone the Repository</h3>
-                        <div class="code-block">
-                            <pre><code>git clone https://github.com/BKoo-Codes/PadDx_miR.git
-cd PadDx_miR</code></pre>
-                            <button class="copy-btn" onclick="copyToClipboard('git clone https://github.com/BKoo-Codes/PadDx_miR.git\ncd PadDx_miR')"><i class="fa-regular fa-copy"></i></button>
-                        </div>
-                    </div>
-                    <div class="step">
-                        <h3>2. Install Dependencies</h3>
-                        <div class="code-block">
-                            <pre><code>pip install -r requirements.txt</code></pre>
-                            <button class="copy-btn" onclick="copyToClipboard('pip install -r requirements.txt')"><i class="fa-regular fa-copy"></i></button>
-                        </div>
-                    </div>
-                    <div class="step">
-                        <h3>3. Run the GUI</h3>
-                        <div class="code-block">
-                            <pre><code>streamlit run app.py</code></pre>
-                            <button class="copy-btn" onclick="copyToClipboard('streamlit run app.py')"><i class="fa-regular fa-copy"></i></button>
-                        </div>
-                        <p class="usage-note">The GUI is the recommended way to use PadDx_miR, providing an interactive experience for designing and visualizing probes.</p>
-                    </div>
-                </div>
-            </div>
-        </section>
-
-        <section id="contact" class="contact">
-            <div class="container">
-                <h2>Get In Touch</h2>
-                <p>Have questions, feedback, or a collaboration idea? Send a message!</p>
-                <form action="https://formspree.io/f/xzdgzgqn" method="POST">
-                    <div class="form-group">
-                        <input type="text" name="name" placeholder="Your Name" required>
-                        <input type="email" name="email" placeholder="Your Email" required>
-                    </div>
-                    <textarea name="message" placeholder="Your Message" rows="6" required></textarea>
-                    <button type="submit" class="btn btn-primary">Send Message</button>
-                </form>
-            </div>
-        </section>
-    </main>
-
-    <footer>
-        <div class="container">
-            <p>&copy; 2026 PadDx_miR Team. Open source under MIT License.</p>
-            <div class="social-links">
-                <a href="https://github.com/BKoo-Codes/PadDx_miR" target="_blank"><i class="fa-brands fa-github"></i></a>
-                <a href="#" target="_blank"><i class="fa-brands fa-twitter"></i></a>
-            </div>
+        <div class="hero-btns">
+          <a href="#install" class="btn btn-primary">Get started</a>
+          <a href="https://github.com/BKoo-Codes/PadDx_miR" target="_blank" rel="noopener" class="btn btn-ghost">View on GitHub</a>
         </div>
-    </footer>
+      </div>
 
-    <script src="main.js"></script>
+      <!-- SIGNATURE: glowing padlock schematic -->
+      <div class="figure-wrap reveal">
+        <div class="cap"><span>padlock probe · anatomy</span><span>φ29 RCA → Cas12a</span></div>
+        <svg class="padlock-svg" viewBox="0 0 520 470" role="img" aria-label="Padlock probe binding a target miRNA">
+          <defs>
+            <filter id="neon" x="-60%" y="-60%" width="220%" height="220%">
+              <feGaussianBlur stdDeviation="3.4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+            </filter>
+            <filter id="bigglow" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="8"/></filter>
+          </defs>
+
+          <!-- fluorescence glow behind Cas12a core -->
+          <path class="core-flick" d="M198,108 C300,58 402,120 388,220 C384,244 378,254 366,262" fill="none" stroke="#3ef2b3" stroke-width="18" stroke-linecap="round" filter="url(#bigglow)" opacity=".55"/>
+
+          <!-- LOOP backbone (length-proportional), neon -->
+          <path d="M156,340 C104,250 122,150 198,108" fill="none" stroke="#7d8bc4" stroke-width="8" stroke-linecap="round" filter="url(#neon)"/>
+          <path class="core-flick" d="M198,108 C300,58 402,120 388,220 C384,244 378,254 366,262" fill="none" stroke="#3ef2b3" stroke-width="9" stroke-linecap="round" filter="url(#neon)"/>
+          <path d="M366,262 C374,288 376,314 374,340" fill="none" stroke="#9b7bff" stroke-width="8" stroke-linecap="round" filter="url(#neon)"/>
+          <path class="rca-run" d="M156,340 C104,250 122,150 198,108 C300,58 402,120 388,220 C384,244 378,254 366,262 C374,288 376,314 374,340" fill="none" stroke="#eafff7" stroke-width="2.6" stroke-linecap="round" opacity=".9"/>
+
+          <!-- pulse rings = Cas12a signal -->
+          <circle class="pulse-ring" cx="290" cy="72" r="14" fill="none" stroke="#3ef2b3" stroke-width="2"/>
+          <circle class="pulse-ring d2" cx="290" cy="72" r="14" fill="none" stroke="#8ff9d6" stroke-width="2"/>
+
+          <!-- duplex bands: each arm pairs with the target beneath it -->
+          <rect x="152" y="333" width="107" height="47" rx="11" fill="rgba(34,211,238,.10)" stroke="rgba(34,211,238,.28)" stroke-width="1"/>
+          <rect x="271" y="333" width="107" height="47" rx="11" fill="rgba(70,200,255,.10)" stroke="rgba(70,200,255,.28)" stroke-width="1"/>
+
+          <!-- ARMS (complementary to target; 5′ vs 3′ colour-coded) -->
+          <line x1="156" y1="340" x2="255" y2="340" stroke="#22d3ee" stroke-width="8.5" stroke-linecap="round" filter="url(#neon)"/>
+          <line x1="275" y1="340" x2="374" y2="340" stroke="#4fc9ff" stroke-width="8.5" stroke-linecap="round" filter="url(#neon)"/>
+          <circle cx="265" cy="340" r="5" fill="#3ef2b3" filter="url(#neon)"/>
+
+          <!-- TARGET miRNA (single strand; both arms hybridize to it) -->
+          <line x1="148" y1="372" x2="382" y2="372" stroke="#ff6f6f" stroke-width="7" stroke-linecap="round" filter="url(#neon)"/>
+
+          <!-- base-pair rungs: bright, contacting both strands -->
+          <g>
+            <line class="bp" x1="168" y1="344" x2="168" y2="370"/><line class="bp" x1="183" y1="344" x2="183" y2="370"/>
+            <line class="bp" x1="198" y1="344" x2="198" y2="370"/><line class="bp" x1="213" y1="344" x2="213" y2="370"/>
+            <line class="bp" x1="228" y1="344" x2="228" y2="370"/><line class="bp" x1="243" y1="344" x2="243" y2="370"/>
+            <line class="bp" x1="287" y1="344" x2="287" y2="370"/><line class="bp" x1="302" y1="344" x2="302" y2="370"/>
+            <line class="bp" x1="317" y1="344" x2="317" y2="370"/><line class="bp" x1="332" y1="344" x2="332" y2="370"/>
+            <line class="bp" x1="347" y1="344" x2="347" y2="370"/><line class="bp" x1="362" y1="344" x2="362" y2="370"/>
+          </g>
+
+          <!-- directionality: target ends + ligation ends (antiparallel duplex) -->
+          <text class="end-mark" x="140" y="376" text-anchor="end">5′</text>
+          <text class="end-mark" x="390" y="376" text-anchor="start">3′</text>
+          <text class="end-mark" x="248" y="331" text-anchor="end" style="font-size:10px">3′</text>
+          <text class="end-mark" x="282" y="331" text-anchor="start" style="font-size:10px">5′p</text>
+
+          <!-- labels -->
+          <line class="leader" x1="290" y1="76" x2="290" y2="54"/>
+          <text class="lbl lbl-core" x="290" y="46" text-anchor="middle">Cas12a core</text>
+          <line class="leader" x1="118" y1="202" x2="66" y2="182"/>
+          <text class="lbl lbl-sm" x="68" y="176" text-anchor="end">Spacer</text>
+          <line class="leader" x1="378" y1="300" x2="432" y2="292"/>
+          <text class="lbl lbl-sm" x="436" y="288" text-anchor="start">Short<tspan x="436" dy="17">spacer</tspan></text>
+          <line class="leader" x1="200" y1="340" x2="150" y2="415"/>
+          <text class="lbl lbl-sm" x="146" y="422" text-anchor="middle">5′ arm</text>
+          <line class="leader" x1="330" y1="340" x2="384" y2="415"/>
+          <text class="lbl lbl-sm" x="388" y="422" text-anchor="middle">3′ arm</text>
+          <text class="lbl lbl-sm" x="265" y="398" text-anchor="middle" style="fill:#ff9a9a">Target miRNA</text>
+          <line class="leader" x1="265" y1="336" x2="265" y2="316"/>
+          <text class="end-mark" x="265" y="310" text-anchor="middle">ligation</text>
+        </svg>
+      </div>
+    </div>
+  </section>
+
+  <div class="divider"></div>
+
+  <!-- PIPELINE -->
+  <section id="pipeline">
+    <div class="container">
+      <div class="sec-head reveal">
+        <span class="eyebrow">Workflow</span>
+        <h2>Five steps, <span class="grad-text">one command</span></h2>
+        <p>Each step is a module in the <span class="mono">padlock_design</span> package — run the full chain from the GUI or the CLI.</p>
+      </div>
+      <div class="steps">
+        <div class="card step reveal"><span class="num">01</span><h3>Sequence pools</h3><p>Generate and pre-filter spacer and Cas12a-core candidates by length, GC, and Tm.</p><div class="tools">assembler · filters</div></div>
+        <div class="card step reveal"><span class="num">02</span><h3>Assemble &amp; filter</h3><p>Build 5′arm · spacer · core · short spacer · 3′arm, then enforce structure rules.</p><div class="tools">assemble_padlock</div></div>
+        <div class="card step reveal"><span class="num">03</span><h3>Stability</h3><p>Nearest-neighbor Tm / ΔG plus RNAfold &amp; RNAcofold from ViennaRNA.</p><div class="tools">thermo · utils</div></div>
+        <div class="card step reveal"><span class="num">04</span><h3>Specificity</h3><p>NCBI BLAST screen for contiguous and 3′-end matches against the transcriptome.</p><div class="tools">blast · classify_hit</div></div>
+        <div class="card step reveal"><span class="num">05</span><h3>Export</h3><p>Ranked candidates with full metrics written to a timestamped Excel report.</p><div class="tools">reporter</div></div>
+      </div>
+    </div>
+  </section>
+
+  <div class="divider"></div>
+
+  <!-- FEATURES -->
+  <section id="features">
+    <div class="container">
+      <div class="sec-head reveal">
+        <span class="eyebrow">Design rules</span>
+        <h2>Why the candidates <span class="grad-text">hold up</span></h2>
+        <p>Every probe passes the same thermodynamic and structural checks the wet lab would demand.</p>
+      </div>
+      <div class="feature-grid">
+        <div class="card f-card reveal">
+          <div class="f-ico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#22d3ee" stroke-width="2"><path d="M4 7h16M4 12h16M4 17h10"/></svg></div>
+          <h3>Structure filtering</h3><p>Rejects long homopolymers, GC blocks, self-complementarity, and cross-hybridization so probes fold cleanly. <code>filters.py</code></p>
+        </div>
+        <div class="card f-card reveal">
+          <div class="f-ico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#3ef2b3" stroke-width="2"><path d="M12 3v18M5 8l7-5 7 5"/></svg></div>
+          <h3>Cas12a-aware cores</h3><p>Core sequences avoid PAM-like motifs and hold a balanced base window for reliable collateral cleavage. <code>cas12a_filter</code></p>
+        </div>
+        <div class="card f-card reveal">
+          <div class="f-ico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#9b7bff" stroke-width="2"><path d="M3 17l6-6 4 4 8-8"/></svg></div>
+          <h3>Thermodynamic scoring</h3><p>Tm and folding ΔG under RCA salt conditions via Biopython and ViennaRNA DNA parameters. <code>thermo.py</code></p>
+        </div>
+        <div class="card f-card reveal">
+          <div class="f-ico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ec5fd0" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg></div>
+          <h3>Off-target BLAST</h3><p>Web BLAST flags contiguous runs and 3′-end homology, then sorts RNA vs genomic hits. <code>run_blast_validation</code></p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="divider"></div>
+
+  <!-- INSTALL -->
+  <section id="install">
+    <div class="container">
+      <div class="sec-head reveal">
+        <span class="eyebrow">Install &amp; run</span>
+        <h2>Up and running in <span class="grad-text">three lines</span></h2>
+        <p>The Streamlit GUI is the recommended way in; the CLI is there for batch runs.</p>
+      </div>
+      <div class="install-grid">
+        <div class="card code-card reveal">
+          <div class="ch"><h3>1 · Clone &amp; install</h3><span class="tag">shell</span></div>
+          <div class="code-body">
+            <button class="copy-btn" data-copy="git clone https://github.com/BKoo-Codes/PadDx_miR.git&#10;cd PadDx_miR&#10;pip install -r requirements.txt">Copy</button>
+            <pre><code><span class="tok">git</span> clone https://github.com/BKoo-Codes/PadDx_miR.git
+<span class="tok">cd</span> PadDx_miR
+<span class="tok">pip</span> install -r requirements.txt</code></pre>
+          </div>
+        </div>
+        <div class="card code-card reveal">
+          <div class="ch"><h3>2 · Launch the GUI</h3><span class="tag">recommended</span></div>
+          <div class="code-body">
+            <button class="copy-btn" data-copy="streamlit run app.py">Copy</button>
+            <pre><code><span class="tok">streamlit</span> run app.py</code></pre>
+          </div>
+        </div>
+        <div class="card code-card reveal" style="grid-column:1/-1">
+          <div class="ch"><h3>Or run headless from the CLI</h3><span class="tag">batch</span></div>
+          <div class="code-body">
+            <button class="copy-btn" data-copy='python main.py --target_name "hsa-miR-21-5p" --target_seq "UAGCUUAUCAGACUGAUGUUGA" --num_candidates 10 --output "results/my_design.xlsx"'>Copy</button>
+            <pre><code><span class="tok">python</span> main.py --target_name <span class="str">"hsa-miR-21-5p"</span> \
+            --target_seq <span class="str">"UAGCUUAUCAGACUGAUGUUGA"</span> \
+            --num_candidates 10 \
+            --output <span class="str">"results/my_design.xlsx"</span></code></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="container">
+    <div class="foot-grid">
+      <div class="foot-brand">
+        <a href="#top" class="logo">
+          <svg class="mark" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+            <circle cx="16" cy="16" r="14" stroke="#22d3ee" stroke-width="2.4"/>
+            <path d="M16 4 C9 9 9 14 16 16 C23 18 23 23 16 28" stroke="#3ef2b3" stroke-width="2.4" stroke-linecap="round"/>
+          </svg>
+          <span>Pad<span class="grad-text">Dx</span>_miR</span>
+        </a>
+        <p>Padlock probe design for miRNA detection, developed at the Convergent Molecular Diagnostics Laboratory.</p>
+      </div>
+      <div class="foot-col">
+        <h4>Project</h4>
+        <a href="#pipeline">Pipeline</a><a href="#features">Design rules</a><a href="#install">Install</a>
+        <a href="https://github.com/BKoo-Codes/PadDx_miR" target="_blank" rel="noopener">GitHub</a>
+      </div>
+      <div class="foot-col">
+        <h4>Lab</h4>
+        <a href="https://sites.google.com/view/cmdxlab-hallym/home" target="_blank" rel="noopener">CMDx Lab</a>
+        <a href="https://sites.google.com/view/cmdxlab-hallym/professor" target="_blank" rel="noopener">Prof. Bonhan Koo</a>
+        <a href="https://sites.google.com/view/cmdxlab-hallym/publications" target="_blank" rel="noopener">Publications</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span>© 2026 CMDx Lab, Hallym University · Chuncheon, Gangwon-do</span>
+      <span>Open source under the MIT License</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+const burger=document.getElementById('hamburger');
+const links=document.getElementById('navlinks');
+burger.addEventListener('click',()=>links.classList.toggle('open'));
+links.querySelectorAll('a').forEach(a=>a.addEventListener('click',()=>links.classList.remove('open')));
+
+document.querySelectorAll('.copy-btn').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    const text=btn.getAttribute('data-copy').replace(/&#10;/g,'\n');
+    navigator.clipboard.writeText(text).then(()=>{
+      const old=btn.textContent;btn.textContent='Copied';btn.classList.add('done');
+      setTimeout(()=>{btn.textContent=old;btn.classList.remove('done')},1600);
+    });
+  });
+});
+
+const io=new IntersectionObserver((entries)=>{
+  entries.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target)}});
+},{threshold:.14});
+document.querySelectorAll('.reveal').forEach(el=>io.observe(el));
+</script>
 </body>
 </html>
