@@ -54,6 +54,7 @@ def run_rnafold_dna(seq, temp=37.0, rnafold_executable=None):
             "--noconv", 
             "-P", resolved_dna_par_path, 
             f"--temp={temp}", 
+            f"-d{VIENNA_DANGLES}",
             "--noPS"
         ]
     
