@@ -117,7 +117,7 @@ with st.sidebar:
     target_seq = st.text_area("Target miRNA Sequence (RNA/DNA)", value="", height=100, help="Sequence of the target miRNA. U will be automatically converted to T.")
 
     st.markdown("### 🧬 Structure Design")
-    spacer_length_single = st.number_input("Spacer Length (nt)", min_value=0, max_value=30, value=15, help="Length of the spacer sequence to prioritize.")
+    spacer_length_single = st.number_input("Spacer Length (nt)", min_value=0, max_value=30, value=10, help="Length of the spacer sequence to prioritize. (Optimized default: 10)")
     cas12a_length_single = st.number_input("Cas12a Core Length (nt)", min_value=20, max_value=24, value=20, help="Length of the Cas12a core sequence to prioritize.")
     
     gc_spacer = st.slider("Spacer GC Content (%)", 0, 100, (35, 60))
@@ -131,16 +131,19 @@ with st.sidebar:
     
     # Advanced Settings Expander
     with st.expander("🛠️ Advanced Filters (Expert)", expanded=False):
-        st.markdown("**Constraint Scores (Lower = Stricter)**")
-        max_homopolymer = st.number_input("Max Homopolymer Length", 3, 10, 4, help="Maximum allowed repetition of a single base (e.g., AAAAA).")
-        score_hairpin_global = st.number_input("Global Hairpin Score", 1, 10, 6, help="Self-complementarity score for the full padlock.")
-        score_hairpin_module = st.number_input("Module Hairpin Score", 1, 10, 5, help="Self-complementarity score for Spacer/Cas12a parts.")
-        
+        st.caption("Optimized rule set (from validated notebook). Higher = less strict.")
+        st.markdown("**Structural (inner region)**")
+        hp_inner   = st.number_input("Inner Poly-N (homopolymer)", 2, 10, 3, help="Min single-base run inside the inner region to reject.")
+        sc_padlock = st.number_input("Padlock Hairpin (self-comp)", 4, 12, 7, help="Min self-complementary match in the full padlock to reject.")
+        tr_inner   = st.number_input("Inner Tandem Repeat", 4, 12, 6, help="Min tandem-repeat length in inner region to reject.")
+        pal_inner  = st.number_input("Inner Palindrome", 4, 12, 6, help="Min palindrome length in extended inner region to reject.")
+        sc_module  = st.number_input("Module Hairpin (Spacer/Cas)", 3, 10, 5, help="Min self-complementary match within Spacer or Cas12a core.")
+
         st.markdown("---")
-        st.markdown("**Cross-Hybridization Scores**")
-        score_cross_module = st.number_input("Module-Module Cross-Hyb", 1, 10, 5, help="Interaction between Spacer and Cas12a core.")
-        score_cross_mirna = st.number_input("miRNA Arm Cross-Hyb", 1, 10, 3, help="Interaction with miRNA binding arms (Critical).")
-        score_cross_global = st.number_input("Global Cross-Hyb", 1, 10, 6, help="General non-specific interaction score.")
+        st.markdown("**Cross-Hybridization**")
+        cross_module = st.number_input("Module & Global Cross-Hyb", 3, 10, 5, help="Spacer↔Cas12a and Padlock↔module interaction.")
+        cross_arm    = st.number_input("miRNA-Arm Cross-Hyb", 2, 10, 4, help="Arm↔Cas12a and inner↔arm interaction (arm↔spacer fixed at 3).")
+        cross_rca    = st.number_input("RCA↔miRNA Cross-Hyb", 3, 12, 7, help="RCA product re-binding the original miRNA.")
 
 import shutil
 
@@ -235,27 +238,28 @@ if run_btn:
         spacer_length = [int(spacer_length_single)]
         cas12a_length = [int(cas12a_length_single)]
         
-        # Construct Validation Params
+        # Construct Validation Params (optimized rule set — inner_seq/inner_ext based)
         custom_validation_params = {
-            "has_long_homopolymer(padlock_seq)": max_homopolymer,
-            "has_self_complementarity_global(padlock_seq)": score_hairpin_global,
-            "has_tandem_repeat(padlock_seq)": 5, # Fixed for now or add option
-            
-            "has_self_complementarity(spacer)": score_hairpin_module,
-            "has_self_complementarity(cas12a_core)": score_hairpin_module,
+            "has_long_homopolymer(inner_seq)": hp_inner,
+            "has_self_complementarity(padlock_seq)": sc_padlock,
+            "has_tandem_repeat(inner_seq)": tr_inner,
+            "has_palindrome(inner_ext)": pal_inner,
 
-            "has_cross_hybridization(spacer, cas12a_core)": score_cross_module,
-            "has_cross_hybridization(spacer_rc, cas12a_core)": score_cross_module,
-            
-            "has_cross_hybridization(mirna_left_rc, spacer)": score_cross_mirna,
-            "has_cross_hybridization(mirna_right_rc, cas12a_core)": score_cross_mirna,
+            "has_self_complementarity(spacer)": sc_module,
+            "has_self_complementarity(cas12a_core)": sc_module,
 
-            "has_cross_hybridization(padlock_seq, spacer)": score_cross_global,
-            "has_cross_hybridization(padlock_seq, cas12a_core)": score_cross_global,
-            "has_cross_hybridization(padlock_seq, mirna_left_rc)": score_cross_global,
-            "has_cross_hybridization(padlock_seq, mirna_right_rc)": score_cross_global,
-            
-            "has_cross_hybridization(padlock_seq_rc, mirna_seq)": score_cross_global,
+            "has_cross_hybridization(spacer, cas12a_core)": cross_module,
+            "has_cross_hybridization(spacer_rc, cas12a_core)": cross_module,
+
+            "has_cross_hybridization(mirna_left_rc, spacer)": 3,
+            "has_cross_hybridization(mirna_right_rc, cas12a_core)": cross_arm,
+
+            "has_cross_hybridization(padlock_seq, spacer)": cross_module,
+            "has_cross_hybridization(padlock_seq, cas12a_core)": cross_module,
+            "has_cross_hybridization(inner_seq, mirna_left_rc)": cross_arm,
+            "has_cross_hybridization(inner_seq, mirna_right_rc)": cross_arm,
+
+            "has_cross_hybridization(padlock_seq_rc, mirna_seq)": cross_rca,
         }
 
         with st.status("Running Design Pipeline...", expanded=True) as status:
@@ -266,10 +270,11 @@ if run_btn:
                 # Force new pool generation if custom params are likely (simple heuristic: always regen for safety in GUI mode)
                 # Or use a different filename based on hash. For now, we reuse the function but pass a temp filename or None to avoid overwriting default cache if desired.
                 # Actually, overwriting is fine as it reflects user's latest choice.
+                _pool_file = f"pools_s{spacer_length[0]}_c{cas12a_length[0]}_g{gc_spacer[0]}-{gc_spacer[1]}_{gc_cas[0]}-{gc_cas[1]}_n{pool_samples}.pkl"
                 spacer_pools, cas12a_pools = generate_pool(
                     spacer_length, 
                     cas12a_length, 
-                    pool_file="custom_pools.pkl", # Use a separate file for GUI custom runs
+                    pool_file=_pool_file,  # param-specific cache: changing settings regenerates
                     num_samples=pool_samples,
                     gc_range_spacer=gc_spacer,
                     gc_range_cas=gc_cas
@@ -281,7 +286,15 @@ if run_btn:
                 st.stop()
 
             # Step 2: Assembly
-            st.write("Assembling candidates with custom filters...")
+            st.write("Assembling candidates with the optimized rule set...")
+            _pbar = st.progress(0.0)
+            _pmsg = st.empty()
+            def _progress(found, target, attempts, elapsed):
+                try:
+                    _pbar.progress(min(found / target, 1.0) if target else 0.0)
+                    _pmsg.markdown(f"후보 **{found}/{target}** · 시도 {attempts:,}회 · {elapsed:.0f}s")
+                except Exception:
+                    pass
             try:
                 candidates = assemble_and_filter_padlocks(
                     target_name, 
@@ -289,8 +302,12 @@ if run_btn:
                     spacer_pools, 
                     cas12a_pools, 
                     num_to_generate=num_candidates,
-                    validation_params=custom_validation_params
+                    validation_params=custom_validation_params,
+                    max_attempts=300_000,
+                    time_limit_sec=180,
+                    progress_cb=_progress
                 )
+                _pbar.progress(1.0)
                 
                 if not candidates:
                     st.error("No valid candidates generated. Try relaxing filters (increase scores) or increasing pool size.")

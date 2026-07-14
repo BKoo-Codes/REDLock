@@ -41,63 +41,62 @@ def generate_pool(spacer_priorities, cas12a_priorities, pool_file="pools_by_leng
 
     return spacer_pools, cas12a_pools
 
-def assemble_and_filter_padlocks(name, seq, spacer_pools, cas12a_pools, num_to_generate=30, validation_params=None):
+def assemble_and_filter_padlocks(name, seq, spacer_pools, cas12a_pools, num_to_generate=30,
+                                 validation_params=None, max_attempts=1_000_000,
+                                 time_limit_sec=None, progress_cb=None):
     """
-    Main pipeline to find the best split and generate validated padlock candidates.
+    Main pipeline: find best split and generate validated padlock candidates.
+    Uses the optimized (junior) rule set by default. If validation_params is
+    provided, it REPLACES the defaults entirely (no silent merge).
     """
     target_name = name
-    target_seq = seq.replace("U", "T") # Ensure DNA sequence
-    
+    target_seq = seq.replace("U", "T")  # Ensure DNA sequence
+
     split_res = find_best_split(target_name, target_seq)
-    print_split_report(split_res)   
-    
-    # Setup Validation Parameters (Default)
+    print_split_report(split_res)
+
+    # ===== Optimized validation rule set (ported from the validated notebook) =====
     DEFAULT_VALIDATION_PARAMS = {
-        # 01: Poly-N repeats (e.g., AAAAA)
-        "has_long_homopolymer(padlock_seq)": 4,
-
-        # 02: Global self-complementarity (Hairpin risk)
-        "has_self_complementarity_global(padlock_seq)": 6,
-
-        # 03: Tandem repeats (e.g., ATATAT)
-        "has_tandem_repeat(padlock_seq)": 5,
-
+        # 01: Poly-N repeats (inner region only)
+        "has_long_homopolymer(inner_seq)": 3,
+        # 02: Padlock self-complementarity (hairpin risk)
+        "has_self_complementarity(padlock_seq)": 7,
+        # 03: Tandem repeats & palindrome (inner)
+        "has_tandem_repeat(inner_seq)": 6,
+        "has_palindrome(inner_ext)": 6,
         # 04: Internal structure within modules
         "has_self_complementarity(spacer)": 5,
         "has_self_complementarity(cas12a_core)": 5,
-
         # 05: Cross-hybridization between modules
         "has_cross_hybridization(spacer, cas12a_core)": 5,
         "has_cross_hybridization(spacer_rc, cas12a_core)": 5,
-        
         # 06: Cross-hybridization with miRNA arms
         "has_cross_hybridization(mirna_left_rc, spacer)": 3,
-        "has_cross_hybridization(mirna_right_rc, cas12a_core)": 3,
-
-        # 07: Global vs. Module cross-reactivity
+        "has_cross_hybridization(mirna_right_rc, cas12a_core)": 4,
+        # 07: Global vs. module cross-reactivity (inner-based)
         "has_cross_hybridization(padlock_seq, spacer)": 5,
         "has_cross_hybridization(padlock_seq, cas12a_core)": 5,
-        "has_cross_hybridization(padlock_seq, mirna_left_rc)": 6,
-        "has_cross_hybridization(padlock_seq, mirna_right_rc)": 6,
-
-        # 08: RCA product vs. Original target/spacer
-        "has_cross_hybridization(padlock_seq_rc, mirna_seq)": 6,
+        "has_cross_hybridization(inner_seq, mirna_left_rc)": 4,
+        "has_cross_hybridization(inner_seq, mirna_right_rc)": 4,
+        # 08: RCA product vs. original target
+        "has_cross_hybridization(padlock_seq_rc, mirna_seq)": 7,
     }
-    
-    # Merge custom params if provided
-    active_params = DEFAULT_VALIDATION_PARAMS.copy()
-    if validation_params:
-        active_params.update(validation_params)
+
+    # REPLACE (not merge): custom params fully override defaults
+    active_params = validation_params if validation_params else DEFAULT_VALIDATION_PARAMS
 
     results = validate_padlocks(
-        spacer_pools, 
-        cas12a_pools, 
-        split_res, 
-        active_params, 
-        NUM_PADLOCKS=num_to_generate, 
-        seed_offset=0
+        spacer_pools,
+        cas12a_pools,
+        split_res,
+        active_params,
+        NUM_PADLOCKS=num_to_generate,
+        seed_offset=0,
+        max_attempts=max_attempts,
+        time_limit_sec=time_limit_sec,
+        progress_cb=progress_cb,
     )
-    
+
     return results
 
 def analyze_and_sort_padlocks(df, dg_threshold=-3.5, rnafold_path=None):

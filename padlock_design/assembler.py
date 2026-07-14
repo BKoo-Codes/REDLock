@@ -1,5 +1,6 @@
 import random
 import itertools
+import time
 from .utils import calculate_gc, rc, tm_nn, calc_dg_nn
 from .filters import *
 
@@ -200,12 +201,19 @@ def is_safe_candidate(candidate, val_params, mirna_seq):
 
 def validate_padlocks(spacer_pools, cas12a_pools, split_results, val_para,
                       NUM_PADLOCKS=10, seed_offset=0,
-                      fixed_spacer=None, fixed_cas12a=None):
+                      fixed_spacer=None, fixed_cas12a=None,
+                      max_attempts=1_000_000, time_limit_sec=None, progress_cb=None):
     """Assembles and validates padlock candidates until NUM_PADLOCKS is reached."""
     results, seen_pairs = [], set()
     current_seed = seed_offset
+    _t0 = time.time()
 
-    for attempts in range(1, 1_000_000 + 1):
+    for attempts in range(1, max_attempts + 1):
+        if time_limit_sec is not None and (time.time() - _t0) > time_limit_sec:
+            print(f"[STOP] Time limit {time_limit_sec}s reached at attempt {attempts}.")
+            break
+        if progress_cb is not None and attempts % 2000 == 0:
+            progress_cb(len(results), NUM_PADLOCKS, attempts, time.time() - _t0)
         candidate = assemble_padlock_candidate(
             spacer_pools, cas12a_pools, split_results, current_seed,
             fixed_spacer=fixed_spacer, fixed_cas12a=fixed_cas12a
@@ -244,6 +252,8 @@ def validate_padlocks(spacer_pools, cas12a_pools, split_results, val_para,
             "miRNA Right Arm (RC)":    candidate['mirna_right_rc'],
         })
         print(f"[Padlock {len(results)}/{NUM_PADLOCKS}] Generated. (Attempts: {attempts})")
+        if progress_cb is not None:
+            progress_cb(len(results), NUM_PADLOCKS, attempts, time.time() - _t0)
 
         if len(results) >= NUM_PADLOCKS:
             break
