@@ -7,6 +7,19 @@ import re
 def has_long_homopolymer(seq, n=3):
     return any(base * n in seq.upper() for base in "ACGT")
 
+
+def has_g_quadruplex(seq, g_run=3, loop_max=7):
+    """
+    True if a canonical G-quadruplex motif is present: >=4 runs of >=g_run G's,
+    separated by 1..loop_max nt loops. Also flags the C-rich complement, because
+    C-tracts on the padlock become G-tracts on the RCA product. G4/C4 motifs stall
+    phi29 polymerase and can impair Cas12a activity.
+    """
+    seq = seq.upper()
+    g_pat = r"G{%d,}(?:.{1,%d}G{%d,}){3,}" % (g_run, loop_max, g_run)
+    c_pat = r"C{%d,}(?:.{1,%d}C{%d,}){3,}" % (g_run, loop_max, g_run)
+    return bool(re.search(g_pat, seq) or re.search(c_pat, seq))
+
 def has_self_complementarity(seq, min_match=4):
     seq = seq.upper()
     return any(seq[i:i+min_match] in rc(seq) for i in range(len(seq) - min_match + 1))

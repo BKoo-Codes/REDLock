@@ -3,6 +3,8 @@ import pandas as pd
 import os
 import io
 import time
+import json
+import datetime
 from padlock_design.pipeline import (
     generate_pool, 
     assemble_and_filter_padlocks, 
@@ -127,6 +129,7 @@ with st.sidebar:
 
     st.markdown("### ⚙️ General Options")
     num_candidates = st.slider("Number of Candidates", min_value=1, max_value=50, value=10, help="Number of candidates to generate and validate.")
+    random_seed = st.number_input("Random Seed", min_value=0, max_value=999999, value=15, help="Fix for reproducible designs. Same seed + same settings = same candidates.")
     dg_threshold = st.number_input("Delta G Threshold (kcal/mol)", value=-3.5, step=0.5, help="Stability threshold. Higher values (less negative) are less stable/better.")
     
     # Advanced Settings Expander
@@ -144,6 +147,7 @@ with st.sidebar:
         cross_module = st.number_input("Module & Global Cross-Hyb", 3, 10, 5, help="Spacer↔Cas12a and Padlock↔module interaction.")
         cross_arm    = st.number_input("miRNA-Arm Cross-Hyb", 2, 10, 4, help="Arm↔Cas12a and inner↔arm interaction (arm↔spacer fixed at 3).")
         cross_rca    = st.number_input("RCA↔miRNA Cross-Hyb", 3, 12, 7, help="RCA product re-binding the original miRNA.")
+        avoid_g4     = st.checkbox("Avoid G-quadruplex (G4)", value=True, help="Reject GGG-N-GGG-N-GGG-N-GGG and its C-rich complement. G4 stalls phi29 & Cas12a.")
 
 import shutil
 
@@ -261,6 +265,8 @@ if run_btn:
 
             "has_cross_hybridization(padlock_seq_rc, mirna_seq)": cross_rca,
         }
+        if avoid_g4:
+            custom_validation_params["has_g_quadruplex(padlock_seq)"] = 3
 
         with st.status("Running Design Pipeline...", expanded=True) as status:
             # Step 1: Pools
@@ -302,6 +308,7 @@ if run_btn:
                     spacer_pools, 
                     cas12a_pools, 
                     num_to_generate=num_candidates,
+                    seed_offset=random_seed,
                     validation_params=custom_validation_params,
                     max_attempts=300_000,
                     time_limit_sec=180,
@@ -370,6 +377,23 @@ if run_btn:
                 
                 final_df = export_candidate_results(final_candidates_list)
                 st.session_state.results = final_df
+                st.session_state.run_config = {
+                    "tool": "PadDx_miR — Padlock Design Studio",
+                    "generated": datetime.datetime.now().isoformat(timespec="seconds"),
+                    "target_name": target_name,
+                    "target_sequence": target_seq,
+                    "random_seed": int(random_seed),
+                    "spacer_length": int(spacer_length_single),
+                    "cas12a_length": int(cas12a_length_single),
+                    "gc_range_spacer": list(gc_spacer),
+                    "gc_range_cas": list(gc_cas),
+                    "pool_samples": int(pool_samples),
+                    "num_candidates": int(num_candidates),
+                    "dg_threshold": float(dg_threshold),
+                    "avoid_g4": bool(avoid_g4),
+                    "blast_mode": blast_mode,
+                    "validation_params": dict(custom_validation_params),
+                }
                 status.update(label="Design Complete!", state="complete", expanded=False)
             else:
                 st.error("Something went wrong during finalization.")
@@ -383,6 +407,13 @@ if st.session_state.results is not None:
     # Summary Metrics
     col1, col2, col3 = st.columns(3)
     df_res = st.session_state.results
+    # crRNA / Cas12a targeting (RCA product = reverse complement of padlock)
+    if "Cas12a Core (Pad)" in df_res.columns:
+        _comp = {"A": "T", "T": "A", "G": "C", "C": "G", "N": "N", "U": "A"}
+        _rc = lambda x: "".join(_comp.get(bb, "N") for bb in str(x).upper()[::-1])
+        df_res = df_res.copy()
+        df_res["crRNA Spacer (RNA)"] = df_res["Cas12a Core (Pad)"].apply(lambda x: str(x).upper().replace("T", "U"))
+        df_res["Cas12a Target on RCA (5to3)"] = df_res["Cas12a Core (Pad)"].apply(_rc)
     with col1:
         st.metric("Candidates Generated", len(df_res))
     with col2:
@@ -393,6 +424,7 @@ if st.session_state.results is not None:
         st.metric("Avg. Delta G", f"{avg_dg:.2f} kcal/mol")
 
     # DataFrame
+    st.caption("Ranked by Penalty Score (lower = better). Warning flags an over-structured 5-prime arm or Cas12a zone.")
     st.dataframe(df_res, use_container_width=True)
 
     # Download Button
@@ -407,6 +439,16 @@ if st.session_state.results is not None:
         file_name=f"padlock_design_{target_name}.xlsx",
         mime="application/vnd.ms-excel"
     )
+
+    st.caption("crRNA Spacer = Cas12a Core (as RNA); the Cas12a target on the RCA product is its reverse complement. Confirm orientation for your Cas12a variant (e.g., LbCas12a).")
+
+    if st.session_state.get("run_config"):
+        st.download_button(
+            label="🧾 Download Run Config (JSON)",
+            data=json.dumps(st.session_state.run_config, indent=2, ensure_ascii=False),
+            file_name=f"run_config_{target_name}.json",
+            mime="application/json",
+        )
 
     # Detailed View Expander
     with st.expander("🔍 Detailed Sequence View"):
