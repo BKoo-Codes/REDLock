@@ -145,7 +145,7 @@ def _penalty_features(row):
     return gc_pct, penalty, ("+".join(warn) if warn else "OK")
 
 
-def analyze_and_sort_padlocks(df, dg_threshold=-3.5, rnafold_path=None):
+def analyze_and_sort_padlocks(df, dg_threshold=-3.5, rnafold_path=None, progress_cb=None):
     """
     Analyzes sequences and filters out candidates with ΔG <= threshold (too stable).
     Returns a filtered dataframe sorted by stability.
@@ -161,6 +161,8 @@ def analyze_and_sort_padlocks(df, dg_threshold=-3.5, rnafold_path=None):
     print(f"{'ID':<4} | {'Target Name':<15} | {'ΔG (kcal/mol)':<15} | {'Status'}")
     print("-" * 85)
 
+    total = len(df)
+    done = 0
     for idx, row in df.iterrows():
         raw_seq = str(row["Padlock Sequence (5'-P)"])
         clean_seq = raw_seq.replace("[5'-P]-", "").strip()
@@ -176,6 +178,9 @@ def analyze_and_sort_padlocks(df, dg_threshold=-3.5, rnafold_path=None):
         
         status = "PASS" if dg > dg_threshold else "REJECTED (Too Stable)"
         print(f"{row['Candidate ID']:<4} | {row['Target Name']:<15} | {dg:>10.2f}     | {status}")
+        done += 1
+        if progress_cb is not None:
+            progress_cb(done, total)
 
     df['Calculated ΔG'] = results_dg
     df['Secondary Structure'] = results_struct

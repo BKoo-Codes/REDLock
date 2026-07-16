@@ -302,7 +302,7 @@ if run_btn:
             def _progress(found, target, attempts, elapsed):
                 try:
                     _pbar.progress(min(found / target, 1.0) if target else 0.0)
-                    _pmsg.markdown(f"후보 **{found}/{target}** · 시도 {attempts:,}회 · {elapsed:.0f}s")
+                    _pmsg.markdown(f"Candidates **{found}/{target}** · {attempts:,} attempts · {elapsed:.0f}s")
                 except Exception:
                     pass
             try:
@@ -334,10 +334,19 @@ if run_btn:
 
             # Step 3: Stability
             st.write("Analyzing thermodynamic stability (RNAfold)...")
+            _sbar = st.progress(0.0)
+            _smsg = st.empty()
+            def _stab_progress(done, total):
+                try:
+                    _sbar.progress(min(done / total, 1.0) if total else 0.0)
+                    _smsg.markdown(f"RNAfold analysis **{done}/{total}**")
+                except Exception:
+                    pass
             try:
                 # Handle optional path
                 r_path = rnafold_path if rnafold_path.strip() else None
-                sorted_df = analyze_and_sort_padlocks(df, dg_threshold=dg_threshold, rnafold_path=r_path)
+                sorted_df = analyze_and_sort_padlocks(df, dg_threshold=dg_threshold, rnafold_path=r_path, progress_cb=_stab_progress)
+                _sbar.progress(1.0)
                 
                 if sorted_df.empty:
                     st.warning("All candidates were rejected due to stability issues.")
@@ -360,7 +369,7 @@ if run_btn:
                     try:
                         frac = min(passed / target, 1.0) if target else (screened / total if total else 0.0)
                         _bbar.progress(frac)
-                        _bmsg.markdown(f"BLAST 스크리닝 **{screened}/{total}** · 통과 **{passed}/{target}**")
+                        _bmsg.markdown(f"BLAST screening **{screened}/{total}** · passed **{passed}/{target}**")
                     except Exception:
                         pass
                 
