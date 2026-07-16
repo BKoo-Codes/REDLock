@@ -128,7 +128,9 @@ with st.sidebar:
     pool_samples = st.select_slider("Pool Sample Size", options=[10000, 50000, 100000, 200000, 500000, 1000000], value=200000, help="Number of random sequences to generate for initial screening. Higher = better diversity but slower.")
 
     st.markdown("### ⚙️ General Options")
-    num_candidates = st.slider("Number of Candidates", min_value=1, max_value=50, value=10, help="Number of candidates to generate and validate.")
+    num_candidates = st.number_input("Number of Candidates (generate)", min_value=1, max_value=2000, value=2000, step=10, help="How many validated padlocks to generate before ranking/BLAST. Up to 2000.")
+    gen_time_min = st.number_input("Generation Time Limit (min)", min_value=1, max_value=60, value=5, help="Max time for the LOCAL generation step. Safe to increase. Returns whatever was found when time runs out.")
+    max_attempts = st.number_input("Max Attempts", min_value=10000, max_value=50_000_000, value=5_000_000, step=100000, help="Upper bound on assembly attempts. Kept high so the time limit above is the effective cap.")
     random_seed = st.number_input("Random Seed", min_value=0, max_value=999999, value=15, help="Fix for reproducible designs. Same seed + same settings = same candidates.")
     dg_threshold = st.number_input("Delta G Threshold (kcal/mol)", value=-3.5, step=0.5, help="Stability threshold. Higher values (less negative) are less stable/better.")
     
@@ -203,6 +205,8 @@ with st.sidebar:
         index=0, # Default to Online NCBI BLAST
         help="Choose how to validate candidates against off-target sequences."
     )
+
+    blast_target = st.number_input("BLAST Pass Target", min_value=1, max_value=50, value=3, help="Stop BLAST as soon as this many candidates pass (top-ranked screened first). e.g. 3 gives you 3 verified candidates.")
 
     blast_exe_path = ""
     blast_db_path = ""
@@ -310,8 +314,8 @@ if run_btn:
                     num_to_generate=num_candidates,
                     seed_offset=random_seed,
                     validation_params=custom_validation_params,
-                    max_attempts=300_000,
-                    time_limit_sec=180,
+                    max_attempts=int(max_attempts),
+                    time_limit_sec=int(gen_time_min * 60),
                     progress_cb=_progress
                 )
                 _pbar.progress(1.0)
@@ -349,15 +353,26 @@ if run_btn:
             # Step 4: BLAST
             final_candidates_list = []
             if blast_mode != "Skip BLAST":
-                st.write(f"Running {blast_mode} validation (this may take a while)...")
+                st.write(f"Running {blast_mode} validation — screening top-ranked candidates until {blast_target} pass...")
+                _bbar = st.progress(0.0)
+                _bmsg = st.empty()
+                def _blast_progress(screened, total, passed, target):
+                    try:
+                        frac = min(passed / target, 1.0) if target else (screened / total if total else 0.0)
+                        _bbar.progress(frac)
+                        _bmsg.markdown(f"BLAST 스크리닝 **{screened}/{total}** · 통과 **{passed}/{target}**")
+                    except Exception:
+                        pass
                 
                 final_candidates_list = run_blast_validation(
                     sorted_df, 
-                    target_count=num_candidates, 
+                    target_count=blast_target, 
                     blast_mode=blast_mode,
                     blast_exe_path=blast_exe_path,
-                    blast_db_path=blast_db_path
+                    blast_db_path=blast_db_path,
+                    progress_cb=_blast_progress
                 )
+                _bbar.progress(1.0)
                 
                 if not final_candidates_list:
                     st.warning("No candidates passed BLAST validation.")
@@ -389,6 +404,9 @@ if run_btn:
                     "gc_range_cas": list(gc_cas),
                     "pool_samples": int(pool_samples),
                     "num_candidates": int(num_candidates),
+                    "gen_time_min": int(gen_time_min),
+                    "max_attempts": int(max_attempts),
+                    "blast_target": int(blast_target),
                     "dg_threshold": float(dg_threshold),
                     "avoid_g4": bool(avoid_g4),
                     "blast_mode": blast_mode,

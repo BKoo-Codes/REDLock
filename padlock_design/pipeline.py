@@ -378,11 +378,16 @@ def evaluate_candidate_safety(hits):
     is_safe = len(reasons) == 0
     return is_safe, reasons
 
-def run_blast_validation(sorted_results, target_count=5, blast_mode="Online NCBI BLAST", blast_exe_path="", blast_db_path=""):
+def run_blast_validation(sorted_results, target_count=5, blast_mode="Online NCBI BLAST", blast_exe_path="", blast_db_path="", progress_cb=None):
     passed_candidates = []
+    total = len(sorted_results)
+    screened = 0
     
     for idx, row in sorted_results.iterrows():
         candidate_id = row.get('Candidate ID', idx + 1)
+        screened += 1
+        if progress_cb is not None:
+            progress_cb(screened, total, len(passed_candidates), target_count)
         print(f"\n{'='*30} [STARTING VALIDATION: CANDIDATE #{candidate_id}] {'='*30}")
 
         # Determine which BLAST function to use
@@ -438,6 +443,8 @@ def run_blast_validation(sorted_results, target_count=5, blast_mode="Online NCBI
         # SUCCESS
         print(f"\n[SUCCESS] CANDIDATE #{candidate_id} IS VERIFIED AS SAFE.")
         passed_candidates.append(row)
+        if progress_cb is not None:
+            progress_cb(screened, total, len(passed_candidates), target_count)
         
         if len(passed_candidates) >= target_count:
             print(f"\n[INFO] TARGET COUNT ({target_count}) REACHED. TERMINATING VALIDATION PROCESS.")
