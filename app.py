@@ -120,15 +120,26 @@ st.markdown("""
         background:rgba(255,255,255,.06);border:1px solid var(--line);border-radius:999px;padding:2px 10px}
     .pd-pick-warn{font-size:.8rem;color:#06141c;background:#ffb454;border-radius:999px;padding:2px 10px;font-weight:700}
     .pd-pick-ok{font-size:.8rem;color:#06141c;background:#3ef2b3;border-radius:999px;padding:2px 10px;font-weight:700}
-    .pd-report{background:rgba(3,6,16,.72);border:1px solid var(--line);border-radius:10px;
-        padding:14px 16px;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:.82rem;
-        line-height:1.55;white-space:pre-wrap;word-break:break-word;margin:0}
+    .pd-report{background:rgba(3,6,16,.72);border:1px solid var(--line);border-radius:12px;
+        padding:14px 18px;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:.84rem;
+        line-height:1.5;margin:0}
+    .pd-report>div{white-space:pre-wrap;word-break:break-word}
+    .pd-r-head{color:#38bdf8;font-weight:800;font-size:.95rem;letter-spacing:.02em;
+        margin:1.05rem 0 .4rem;padding-bottom:.28rem;border-bottom:1px solid rgba(56,189,248,.28)}
+    .pd-report>.pd-r-head:first-child{margin-top:0}
+    .pd-r-rule{height:1px;background:var(--line);margin:.55rem 0}
+    .pd-r-gap{height:.35rem}
+    .pd-r-key{color:#3ef2b3;font-weight:700;margin:.2rem 0 .1rem}
+    .pd-r-item{padding-left:12px;border-left:2px solid rgba(56,189,248,.22);margin:1px 0}
+    .pd-r-k{color:#8f9dc2}
+    .pd-r-v{color:#eaf0ff;margin-left:8px}
     /* ---- Inspect: prompt, selectbox, banner, detail ---- */
     .pd-selprompt{font-family:'Sora',sans-serif;font-weight:700;font-size:1.02rem;color:#7dd3fc;
         margin:.3rem 0 .35rem;display:flex;align-items:center;gap:8px}
-    [data-baseweb="select"]>div{border:1.6px solid rgba(56,189,248,.55)!important;
-        background:rgba(56,189,248,.07)!important;border-radius:10px!important;
-        box-shadow:0 0 0 3px rgba(56,189,248,.09)}
+    [data-baseweb="select"]>div{border:1.6px solid rgba(56,189,248,.6)!important;
+        background:rgba(56,189,248,.09)!important;border-radius:10px!important;
+        box-shadow:0 0 0 3px rgba(56,189,248,.10);min-height:50px}
+    [data-baseweb="select"]>div>div{font-size:1.14rem!important;font-weight:800!important;color:#eaf0ff!important}
     .pd-pick-lead{color:#93a0c4;font-size:.92rem}
     .pd-pick-id{font-family:'Sora',sans-serif;font-weight:800;font-size:1.1rem;color:#7dd3fc}
     .pd-detail{margin:.1rem 0 .2rem}
@@ -614,7 +625,6 @@ if st.session_state.results is not None:
 
     col_det1, col_det2 = st.columns([2, 1])
     with col_det1:
-        _clean_pad = padlock_seq_full.replace("[5'-P]-", "")
         _spacer = str(row.get("Spacer (Pad)", "N/A"))
         _cas = str(row.get("Cas12a Core (Pad)", "N/A"))
         _crrna = str(row.get("crRNA Spacer (RNA)", "")) if "crRNA Spacer (RNA)" in df_res.columns else ""
@@ -634,7 +644,6 @@ if st.session_state.results is not None:
             "</div>",
             unsafe_allow_html=True,
         )
-        st.code(_clean_pad, language=None)
 
     with col_det2:
         if structure and padlock_seq_full != "N/A":
@@ -653,11 +662,30 @@ if st.session_state.results is not None:
     st.markdown("---")
     report_str = generate_detailed_report(row)
     import html as _html
-    _rlines = []
+    import re as _re
+    _rhtml = []
     for _ln in report_str.split("\n"):
-        _esc = _html.escape(_ln)
-        if "=====" in _ln:
-            _rlines.append(f"<span style='color:#38bdf8;font-weight:700'>{_esc}</span>")
+        _sline = _ln.strip()
+        if not _sline:
+            _rhtml.append("<div class='pd-r-gap'></div>")
+        elif "=====" in _ln:
+            _m = _re.search(r"\[(.*?)\]", _ln)
+            _title = _m.group(1).strip() if _m else _sline.replace("=", "").strip()
+            _rhtml.append(f"<div class='pd-r-head'>{_html.escape(_title)}</div>")
+        elif set(_sline) == {"-"}:
+            _rhtml.append("<div class='pd-r-rule'></div>")
+        elif _sline.startswith(">"):
+            _rhtml.append(f"<div class='pd-r-key'>{_html.escape(_sline.lstrip('> ').strip())}</div>")
         else:
-            _rlines.append(f"<span style='color:#e6edff'>{_esc}</span>")
-    st.markdown("<pre class='pd-report'>" + "<br>".join(_rlines) + "</pre>", unsafe_allow_html=True)
+            _txt = _sline[1:].strip() if _sline.startswith("-") else _sline
+            _icls = " pd-r-item" if _sline.startswith("-") else ""
+            if ":" in _txt:
+                _k, _v = _txt.split(":", 1)
+                _rhtml.append(
+                    f"<div class='pd-r-line{_icls}'>"
+                    f"<span class='pd-r-k'>{_html.escape(_k.strip())}</span>"
+                    f"<span class='pd-r-v'>{_html.escape(_v.strip())}</span></div>"
+                )
+            else:
+                _rhtml.append(f"<div class='pd-r-line{_icls}'>{_html.escape(_txt)}</div>")
+    st.markdown("<div class='pd-report'>" + "".join(_rhtml) + "</div>", unsafe_allow_html=True)
