@@ -92,7 +92,7 @@ st.markdown("""
 
     /* ---- Code blocks ---- */
     .stApp pre,.stApp code{background:rgba(3,6,16,.65)!important}
-    .stApp code{color:#3ef2b3}
+    .stApp code{color:#e6edff}
 
     /* ---- Misc accents ---- */
     hr{border-color:var(--line)}
@@ -109,6 +109,20 @@ st.markdown("""
     [data-testid="stSidebar"] .stSlider label,[data-testid="stSidebar"] .stNumberInput label,
     [data-testid="stSidebar"] .stTextInput label,[data-testid="stSidebar"] .stTextArea label{
         font-size:.82rem;color:#c7d2f0;font-weight:500}
+    /* ---- Selected-candidate banner + report ---- */
+    .pd-pick{display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+        background:linear-gradient(180deg,rgba(56,189,248,.14),rgba(155,123,255,.08));
+        border:1px solid rgba(56,189,248,.35);border-left:4px solid #38bdf8;border-radius:12px;
+        padding:12px 16px;margin:.2rem 0 .8rem;font-size:1.02rem;color:#eaf0ff;
+        box-shadow:0 8px 26px -16px rgba(56,189,248,.7)}
+    .pd-pick b{color:#7dd3fc}
+    .pd-pick-tag{font-family:'JetBrains Mono',monospace;font-size:.8rem;color:#cbd5f5;
+        background:rgba(255,255,255,.06);border:1px solid var(--line);border-radius:999px;padding:2px 10px}
+    .pd-pick-warn{font-size:.8rem;color:#06141c;background:#ffb454;border-radius:999px;padding:2px 10px;font-weight:700}
+    .pd-pick-ok{font-size:.8rem;color:#06141c;background:#3ef2b3;border-radius:999px;padding:2px 10px;font-weight:700}
+    .pd-report{background:rgba(3,6,16,.72);border:1px solid var(--line);border-radius:10px;
+        padding:14px 16px;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:.82rem;
+        line-height:1.55;white-space:pre;margin:0}
 </style>
 """, unsafe_allow_html=True)
 
@@ -239,22 +253,22 @@ with st.sidebar:
     # ────────────────────────── ④ Validation ────────────────────────
     _sec("④ Validation")
     detected_path = find_rnafold_path()
-    with st.expander("Thermodynamics (RNAfold)", expanded=False):
-        if detected_path:
-            st.caption("✅ RNAfold auto-detected on this machine.")
+    st.markdown("**Thermodynamics (RNAfold)**")
+    if detected_path:
+        st.caption("✅ RNAfold auto-detected on this machine.")
+    else:
+        st.caption("⚠️ RNAfold not found — ΔG will default to 0.0.")
+    rnafold_path = st.text_input(
+        "RNAfold Path", value=detected_path,
+        help="Full path to RNAfold.exe. If empty, ΔG is skipped (0.0).",
+    )
+    if st.button("Test RNAfold Path"):
+        if rnafold_path and os.path.exists(rnafold_path):
+            st.success("✅ RNAfold found!")
+        elif not rnafold_path:
+            st.warning("⚠️ Path is empty.")
         else:
-            st.caption("⚠️ RNAfold not found — ΔG will default to 0.0.")
-        rnafold_path = st.text_input(
-            "RNAfold Path", value=detected_path,
-            help="Full path to RNAfold.exe. If empty, ΔG is skipped (0.0).",
-        )
-        if st.button("Test RNAfold Path"):
-            if rnafold_path and os.path.exists(rnafold_path):
-                st.success("✅ RNAfold found!")
-            elif not rnafold_path:
-                st.warning("⚠️ Path is empty.")
-            else:
-                st.error("❌ File not found at this path.")
+            st.error("❌ File not found at this path.")
 
     blast_mode = st.radio(
         "BLAST Mode",
@@ -535,8 +549,8 @@ if st.session_state.results is not None:
     buffer = io.BytesIO()
     with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
         df_res.to_excel(writer, index=False, sheet_name="Padlock Candidates")
-    _d1, _d2 = st.columns(2)
-    with _d1:
+    _dc, _dpad = st.columns([1, 2])
+    with _dc:
         st.download_button(
             label="📥 Results (Excel)",
             data=buffer.getvalue(),
@@ -544,7 +558,6 @@ if st.session_state.results is not None:
             mime="application/vnd.ms-excel",
             use_container_width=True,
         )
-    with _d2:
         if st.session_state.get("run_config"):
             st.download_button(
                 label="🧾 Run Config (JSON)",
@@ -567,9 +580,19 @@ if st.session_state.results is not None:
     padlock_seq_full = row.get("Padlock Sequence (5'-P)", "N/A")
     structure = row.get("Secondary Structure", "")
 
+    _pen = row.get("Penalty Score", "—")
+    _warn = str(row.get("Warning", "") or "")
+    _badge = (f"<span class='pd-pick-warn'>⚠ {_warn}</span>"
+              if _warn and _warn != "OK" else "<span class='pd-pick-ok'>✓ OK</span>")
+    st.markdown(
+        f"<div class='pd-pick'>Viewing <b>Candidate #{_ids[_sel]}</b>"
+        f"<span class='pd-pick-tag'>penalty {_pen}</span>{_badge}</div>",
+        unsafe_allow_html=True,
+    )
+
     col_det1, col_det2 = st.columns([2, 1])
     with col_det1:
-        st.code(f"Padlock: {padlock_seq_full}")
+        st.code(f"Padlock: {padlock_seq_full}", language=None)
         st.text(f"Spacer: {row.get('Spacer (Pad)', 'N/A')} | Cas12a Core: {row.get('Cas12a Core (Pad)', 'N/A')}")
         if "crRNA Spacer (RNA)" in df_res.columns:
             st.text(f"crRNA Spacer: {row.get('crRNA Spacer (RNA)', 'N/A')}")
@@ -592,4 +615,12 @@ if st.session_state.results is not None:
     # Full analysis report
     st.markdown("---")
     report_str = generate_detailed_report(row)
-    st.code(report_str)
+    import html as _html
+    _rlines = []
+    for _ln in report_str.split("\n"):
+        _esc = _html.escape(_ln)
+        if "=====" in _ln:
+            _rlines.append(f"<span style='color:#38bdf8;font-weight:700'>{_esc}</span>")
+        else:
+            _rlines.append(f"<span style='color:#e6edff'>{_esc}</span>")
+    st.markdown("<pre class='pd-report'>" + "\n".join(_rlines) + "</pre>", unsafe_allow_html=True)
