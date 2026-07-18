@@ -551,7 +551,7 @@ if st.session_state.results is not None:
         st.metric("Candidates", len(df_res))
     with m2:
         best_pen = df_res["Penalty Score"].min() if "Penalty Score" in df_res.columns else None
-        st.metric("Best Penalty", f"{best_pen:.2f}" if best_pen is not None else "—")
+        st.metric("Best Penalty", f"{best_pen:.3f}" if best_pen is not None else "—")
     with m3:
         avg_tm = df_res["Padlock Tm"].mean() if "Padlock Tm" in df_res.columns else 0
         st.metric("Avg. Padlock Tm", f"{avg_tm:.1f} °C")
