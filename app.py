@@ -3,6 +3,8 @@ import pandas as pd
 import os
 import io
 import time
+import json
+import datetime
 from padlock_design.pipeline import (
     generate_pool, 
     assemble_and_filter_padlocks, 
@@ -12,8 +14,6 @@ from padlock_design.pipeline import (
 )
 from padlock_design.visualization import plot_structure
 from padlock_design.reporter import generate_detailed_report
-
-# ... existing imports ...
 
 # Page Config
 st.set_page_config(
@@ -97,6 +97,18 @@ st.markdown("""
     /* ---- Misc accents ---- */
     hr{border-color:var(--line)}
     a{color:#38bdf8}
+    /* ---- Sidebar brand + section headers ---- */
+    .pd-side-head{display:flex;align-items:center;gap:11px;margin:.1rem 0 .5rem}
+    .pd-side-dot{font-size:1.55rem;filter:drop-shadow(0 0 9px rgba(62,242,179,.6))}
+    .pd-side-title{font-family:'Sora',sans-serif;font-weight:800;font-size:1.15rem;line-height:1;
+        background:linear-gradient(115deg,#5eead4,#38bdf8 55%,#a78bfa);
+        -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+    .pd-side-sub{color:#93a0c4;font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;margin-top:3px}
+    .pd-sec{font-family:'Sora',sans-serif;font-size:.78rem;font-weight:700;letter-spacing:.09em;
+        text-transform:uppercase;color:#9fb0d9;margin:1rem 0 .4rem;padding-top:.6rem;border-top:1px solid var(--line)}
+    [data-testid="stSidebar"] .stSlider label,[data-testid="stSidebar"] .stNumberInput label,
+    [data-testid="stSidebar"] .stTextInput label,[data-testid="stSidebar"] .stTextArea label{
+        font-size:.82rem;color:#c7d2f0;font-weight:500}
 </style>
 """, unsafe_allow_html=True)
 
@@ -108,115 +120,166 @@ def parse_int_list(input_str, default):
         return default
 
 # Sidebar - Configuration
-with st.sidebar:
-    st.image("https://img.icons8.com/color/96/000000/dna-helix.png", width=80)
-    st.title("Settings")
-    
-    st.markdown("### 🎯 Target Parameters")
-    target_name = st.text_input("Target miRNA Name", value="", help="Name of the target miRNA")
-    target_seq = st.text_area("Target miRNA Sequence (RNA/DNA)", value="", height=100, help="Sequence of the target miRNA. U will be automatically converted to T.")
-
-    st.markdown("### 🧬 Structure Design")
-    spacer_length_single = st.number_input("Spacer Length (nt)", min_value=0, max_value=30, value=10, help="Length of the spacer sequence to prioritize. (Optimized default: 10)")
-    cas12a_length_single = st.number_input("Cas12a Core Length (nt)", min_value=20, max_value=24, value=20, help="Length of the Cas12a core sequence to prioritize.")
-    
-    gc_spacer = st.slider("Spacer GC Content (%)", 0, 100, (35, 60))
-    gc_cas = st.slider("Cas12a GC Content (%)", 0, 100, (35, 65))
-    
-    pool_samples = st.select_slider("Pool Sample Size", options=[10000, 50000, 100000, 200000, 500000, 1000000], value=200000, help="Number of random sequences to generate for initial screening. Higher = better diversity but slower.")
-
-    st.markdown("### ⚙️ General Options")
-    num_candidates = st.slider("Number of Candidates", min_value=1, max_value=50, value=10, help="Number of candidates to generate and validate.")
-    dg_threshold = st.number_input("Delta G Threshold (kcal/mol)", value=-3.5, step=0.5, help="Stability threshold. Higher values (less negative) are less stable/better.")
-    
-    # Advanced Settings Expander
-    with st.expander("🛠️ Advanced Filters (Expert)", expanded=False):
-        st.caption("Optimized rule set (from validated notebook). Higher = less strict.")
-        st.markdown("**Structural (inner region)**")
-        hp_inner   = st.number_input("Inner Poly-N (homopolymer)", 2, 10, 3, help="Min single-base run inside the inner region to reject.")
-        sc_padlock = st.number_input("Padlock Hairpin (self-comp)", 4, 12, 7, help="Min self-complementary match in the full padlock to reject.")
-        tr_inner   = st.number_input("Inner Tandem Repeat", 4, 12, 6, help="Min tandem-repeat length in inner region to reject.")
-        pal_inner  = st.number_input("Inner Palindrome", 4, 12, 6, help="Min palindrome length in extended inner region to reject.")
-        sc_module  = st.number_input("Module Hairpin (Spacer/Cas)", 3, 10, 5, help="Min self-complementary match within Spacer or Cas12a core.")
-
-        st.markdown("---")
-        st.markdown("**Cross-Hybridization**")
-        cross_module = st.number_input("Module & Global Cross-Hyb", 3, 10, 5, help="Spacer↔Cas12a and Padlock↔module interaction.")
-        cross_arm    = st.number_input("miRNA-Arm Cross-Hyb", 2, 10, 4, help="Arm↔Cas12a and inner↔arm interaction (arm↔spacer fixed at 3).")
-        cross_rca    = st.number_input("RCA↔miRNA Cross-Hyb", 3, 12, 7, help="RCA product re-binding the original miRNA.")
-
 import shutil
 
-# ... existing imports ...
 
-# Helper to find RNAfold
 def find_rnafold_path():
     # 1. Check system PATH
     path = shutil.which("RNAfold")
     if path:
         return path
-        
-    # 2. Check common Windows paths
+    # 2. Check common Windows install locations
     common_paths = [
         r"C:\Program Files (x86)\ViennaRNA Package\RNAfold.exe",
         r"C:\Program Files\ViennaRNA Package\RNAfold.exe",
         r"C:\ViennaRNA Package\RNAfold.exe",
-        r"C:\ViennaRNA\RNAfold.exe"
+        r"C:\ViennaRNA\RNAfold.exe",
     ]
     for p in common_paths:
         if os.path.exists(p):
             return p
-            
     return ""
 
-# Sidebar - Configuration
+
+def _sec(label):
+    """Render a styled sidebar section header."""
+    st.markdown(f"<div class='pd-sec'>{label}</div>", unsafe_allow_html=True)
+
+
 with st.sidebar:
-    # ... existing settings ...
-    
-    st.markdown("### 🛡️ Validation & Stability")
-    
-    # RNAfold Configuration
+    st.markdown(
+        "<div class='pd-side-head'>"
+        "<span class='pd-side-dot'>🧬</span>"
+        "<div><div class='pd-side-title'>PadDx_miR</div>"
+        "<div class='pd-side-sub'>Design Settings</div></div>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
+    # ─────────────────────────── ① Target ───────────────────────────
+    _sec("① Target miRNA")
+    target_name = st.text_input(
+        "Name", value="", placeholder="e.g. hsa-miR-21-5p",
+        help="Name of the target miRNA.",
+    )
+    target_seq = st.text_area(
+        "Sequence (RNA/DNA)", value="", height=90,
+        placeholder="e.g. UAGCUUAUCAGACUGAUGUUGA",
+        help="Target miRNA sequence. U is auto-converted to T.",
+    )
+    _clean = "".join(c for c in target_seq.upper() if c in "ACGUT")
+    if _clean:
+        _gc = round(sum(c in "GC" for c in _clean) / len(_clean) * 100, 1)
+        st.caption(f"Length **{len(_clean)} nt**  ·  GC **{_gc}%**")
+
+    # ────────────────────────── ② Structure ─────────────────────────
+    _sec("② Structure Design")
+    _c1, _c2 = st.columns(2)
+    with _c1:
+        spacer_length_single = st.number_input(
+            "Spacer (nt)", min_value=0, max_value=30, value=10,
+            help="Spacer length to prioritize. Optimized default: 10.",
+        )
+    with _c2:
+        cas12a_length_single = st.number_input(
+            "Cas12a Core (nt)", min_value=20, max_value=24, value=20,
+            help="Cas12a core length to prioritize.",
+        )
+    gc_spacer = st.slider("Spacer GC (%)", 0, 100, (35, 60))
+    gc_cas = st.slider("Cas12a GC (%)", 0, 100, (35, 65))
+    pool_samples = st.select_slider(
+        "Pool Sample Size",
+        options=[10000, 50000, 100000, 200000, 500000, 1000000],
+        value=200000,
+        help="Random sequences per length for initial screening. Higher = more diversity, slower.",
+    )
+
+    # ────────────────────────── ③ Generation ────────────────────────
+    _sec("③ Generation")
+    num_candidates = st.number_input(
+        "Candidates to generate", min_value=1, max_value=2000, value=2000, step=10,
+        help="How many validated padlocks to generate before ranking / BLAST. Up to 2000.",
+    )
+    _g1, _g2 = st.columns(2)
+    with _g1:
+        gen_time_min = st.number_input(
+            "Time limit (min)", min_value=1, max_value=60, value=5,
+            help="Max time for the LOCAL generation step. Safe to increase.",
+        )
+    with _g2:
+        random_seed = st.number_input(
+            "Random seed", min_value=0, max_value=999999, value=15,
+            help="Fix for reproducible designs. Same seed + settings = same candidates.",
+        )
+    dg_threshold = st.number_input(
+        "ΔG threshold (kcal/mol)", value=-3.5, step=0.5,
+        help="Stability cutoff. Higher (less negative) = less folded / better accessibility.",
+    )
+    with st.expander("Generation budget (advanced)", expanded=False):
+        max_attempts = st.number_input(
+            "Max attempts", min_value=10000, max_value=50_000_000, value=5_000_000, step=100000,
+            help="Upper bound on assembly attempts. Kept high so the time limit is the effective cap.",
+        )
+
+    # ─────────────────── Advanced Filters (expander) ─────────────────
+    with st.expander("🛠️ Advanced Filters (Expert)", expanded=False):
+        st.caption("Optimized rule set (validated). Higher = less strict.")
+        st.markdown("**Structural (inner region)**")
+        hp_inner = st.number_input("Inner Poly-N (homopolymer)", 2, 10, 3, help="Min single-base run inside the inner region to reject.")
+        sc_padlock = st.number_input("Padlock Hairpin (self-comp)", 4, 12, 7, help="Min self-complementary match in the full padlock to reject.")
+        tr_inner = st.number_input("Inner Tandem Repeat", 4, 12, 6, help="Min tandem-repeat length in inner region to reject.")
+        pal_inner = st.number_input("Inner Palindrome", 4, 12, 6, help="Min palindrome length in extended inner region to reject.")
+        sc_module = st.number_input("Module Hairpin (Spacer/Cas)", 3, 10, 5, help="Min self-complementary match within Spacer or Cas12a core.")
+        st.markdown("**Cross-Hybridization**")
+        cross_module = st.number_input("Module & Global Cross-Hyb", 3, 10, 5, help="Spacer↔Cas12a and Padlock↔module interaction.")
+        cross_arm = st.number_input("miRNA-Arm Cross-Hyb", 2, 10, 4, help="Arm↔Cas12a and inner↔arm interaction (arm↔spacer fixed at 3).")
+        cross_rca = st.number_input("RCA↔miRNA Cross-Hyb", 3, 12, 7, help="RCA product re-binding the original miRNA.")
+        avoid_g4 = st.checkbox("Avoid G-quadruplex (G4)", value=True, help="Reject GGG-N-GGG-N-GGG-N-GGG and its C-rich complement. G4 stalls phi29 & Cas12a.")
+
+    # ────────────────────────── ④ Validation ────────────────────────
+    _sec("④ Validation")
     detected_path = find_rnafold_path()
-    rnafold_path = st.text_input(
-        "RNAfold Path", 
-        value=detected_path, 
-        help="Full path to RNAfold.exe. If empty, dG calculation will be skipped (0.0)."
-    )
-    
-    if st.button("Test RNAfold Path"):
-        if rnafold_path and os.path.exists(rnafold_path):
-            st.success("✅ RNAfold found!")
-        elif not rnafold_path:
-            st.warning("⚠️ Path is empty.")
+    with st.expander("Thermodynamics (RNAfold)", expanded=False):
+        if detected_path:
+            st.caption("✅ RNAfold auto-detected on this machine.")
         else:
-            st.error("❌ File not found at this path.")
+            st.caption("⚠️ RNAfold not found — ΔG will default to 0.0.")
+        rnafold_path = st.text_input(
+            "RNAfold Path", value=detected_path,
+            help="Full path to RNAfold.exe. If empty, ΔG is skipped (0.0).",
+        )
+        if st.button("Test RNAfold Path"):
+            if rnafold_path and os.path.exists(rnafold_path):
+                st.success("✅ RNAfold found!")
+            elif not rnafold_path:
+                st.warning("⚠️ Path is empty.")
+            else:
+                st.error("❌ File not found at this path.")
 
-    st.markdown("---")
-    st.markdown("### 💥 BLAST Validation")
     blast_mode = st.radio(
-        "Select BLAST Mode",
+        "BLAST Mode",
         options=["Online NCBI BLAST", "Local BLAST", "Skip BLAST"],
-        index=0, # Default to Online NCBI BLAST
-        help="Choose how to validate candidates against off-target sequences."
+        index=0,
+        help="How to validate candidates against off-target sequences.",
     )
-
+    blast_target = st.number_input(
+        "BLAST Pass Target", min_value=1, max_value=50, value=3,
+        help="Stop BLAST once this many candidates pass (top-ranked screened first). e.g. 3 gives 3 verified candidates.",
+    )
     blast_exe_path = ""
     blast_db_path = ""
-
     if blast_mode == "Local BLAST":
-        st.info("For local BLAST, you need to have NCBI BLAST+ installed and a local database prepared.")
+        st.info("Local BLAST requires NCBI BLAST+ installed and a local database.")
         blast_exe_path = st.text_input(
-            "Local BLAST Executable Path",
-            value="",
-            help="Full path to the blastn executable (e.g., C:\\blast\\bin\\blastn.exe)"
+            "Local BLAST Executable Path", value="",
+            help="Full path to blastn (e.g. C:\\blast\\bin\\blastn.exe).",
         )
         blast_db_path = st.text_input(
-            "Local BLAST Database Path",
-            value="",
-            help="Full path to your local BLAST database (e.g., C:\\blast\\db\\nt)"
+            "Local BLAST Database Path", value="",
+            help="Full path to your local BLAST database (e.g. C:\\blast\\db\\nt).",
         )
-        
-    st.markdown("---")
+
+    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
     run_btn = st.button("🚀 Run Design", type="primary")
 
 # Main Content
@@ -261,6 +324,8 @@ if run_btn:
 
             "has_cross_hybridization(padlock_seq_rc, mirna_seq)": cross_rca,
         }
+        if avoid_g4:
+            custom_validation_params["has_g_quadruplex(padlock_seq)"] = 3
 
         with st.status("Running Design Pipeline...", expanded=True) as status:
             # Step 1: Pools
@@ -292,7 +357,7 @@ if run_btn:
             def _progress(found, target, attempts, elapsed):
                 try:
                     _pbar.progress(min(found / target, 1.0) if target else 0.0)
-                    _pmsg.markdown(f"후보 **{found}/{target}** · 시도 {attempts:,}회 · {elapsed:.0f}s")
+                    _pmsg.markdown(f"Candidates **{found}/{target}** · {attempts:,} attempts · {elapsed:.0f}s")
                 except Exception:
                     pass
             try:
@@ -302,9 +367,10 @@ if run_btn:
                     spacer_pools, 
                     cas12a_pools, 
                     num_to_generate=num_candidates,
+                    seed_offset=random_seed,
                     validation_params=custom_validation_params,
-                    max_attempts=300_000,
-                    time_limit_sec=180,
+                    max_attempts=int(max_attempts),
+                    time_limit_sec=int(gen_time_min * 60),
                     progress_cb=_progress
                 )
                 _pbar.progress(1.0)
@@ -323,10 +389,19 @@ if run_btn:
 
             # Step 3: Stability
             st.write("Analyzing thermodynamic stability (RNAfold)...")
+            _sbar = st.progress(0.0)
+            _smsg = st.empty()
+            def _stab_progress(done, total):
+                try:
+                    _sbar.progress(min(done / total, 1.0) if total else 0.0)
+                    _smsg.markdown(f"RNAfold analysis **{done}/{total}**")
+                except Exception:
+                    pass
             try:
                 # Handle optional path
                 r_path = rnafold_path if rnafold_path.strip() else None
-                sorted_df = analyze_and_sort_padlocks(df, dg_threshold=dg_threshold, rnafold_path=r_path)
+                sorted_df = analyze_and_sort_padlocks(df, dg_threshold=dg_threshold, rnafold_path=r_path, progress_cb=_stab_progress)
+                _sbar.progress(1.0)
                 
                 if sorted_df.empty:
                     st.warning("All candidates were rejected due to stability issues.")
@@ -342,15 +417,26 @@ if run_btn:
             # Step 4: BLAST
             final_candidates_list = []
             if blast_mode != "Skip BLAST":
-                st.write(f"Running {blast_mode} validation (this may take a while)...")
+                st.write(f"Running {blast_mode} validation — screening top-ranked candidates until {blast_target} pass...")
+                _bbar = st.progress(0.0)
+                _bmsg = st.empty()
+                def _blast_progress(screened, total, passed, target):
+                    try:
+                        frac = min(passed / target, 1.0) if target else (screened / total if total else 0.0)
+                        _bbar.progress(frac)
+                        _bmsg.markdown(f"BLAST screening **{screened}/{total}** · passed **{passed}/{target}**")
+                    except Exception:
+                        pass
                 
                 final_candidates_list = run_blast_validation(
                     sorted_df, 
-                    target_count=num_candidates, 
+                    target_count=blast_target, 
                     blast_mode=blast_mode,
                     blast_exe_path=blast_exe_path,
-                    blast_db_path=blast_db_path
+                    blast_db_path=blast_db_path,
+                    progress_cb=_blast_progress
                 )
+                _bbar.progress(1.0)
                 
                 if not final_candidates_list:
                     st.warning("No candidates passed BLAST validation.")
@@ -370,6 +456,26 @@ if run_btn:
                 
                 final_df = export_candidate_results(final_candidates_list)
                 st.session_state.results = final_df
+                st.session_state.run_config = {
+                    "tool": "PadDx_miR — Padlock Design Studio",
+                    "generated": datetime.datetime.now().isoformat(timespec="seconds"),
+                    "target_name": target_name,
+                    "target_sequence": target_seq,
+                    "random_seed": int(random_seed),
+                    "spacer_length": int(spacer_length_single),
+                    "cas12a_length": int(cas12a_length_single),
+                    "gc_range_spacer": list(gc_spacer),
+                    "gc_range_cas": list(gc_cas),
+                    "pool_samples": int(pool_samples),
+                    "num_candidates": int(num_candidates),
+                    "gen_time_min": int(gen_time_min),
+                    "max_attempts": int(max_attempts),
+                    "blast_target": int(blast_target),
+                    "dg_threshold": float(dg_threshold),
+                    "avoid_g4": bool(avoid_g4),
+                    "blast_mode": blast_mode,
+                    "validation_params": dict(custom_validation_params),
+                }
                 status.update(label="Design Complete!", state="complete", expanded=False)
             else:
                 st.error("Something went wrong during finalization.")
@@ -378,70 +484,112 @@ if run_btn:
 # Results Display
 if st.session_state.results is not None:
     st.divider()
-    st.subheader("🎉 Design Results")
-    
-    # Summary Metrics
-    col1, col2, col3 = st.columns(3)
+
     df_res = st.session_state.results
-    with col1:
-        st.metric("Candidates Generated", len(df_res))
-    with col2:
-        avg_tm = df_res['Padlock Tm'].mean() if 'Padlock Tm' in df_res.columns else 0
-        st.metric("Avg. Padlock Tm", f"{avg_tm:.2f} °C")
-    with col3:
-        avg_dg = df_res['Padlock ΔG (kcal/mol)'].mean() if 'Padlock ΔG (kcal/mol)' in df_res.columns else 0
-        st.metric("Avg. Delta G", f"{avg_dg:.2f} kcal/mol")
+    # crRNA / Cas12a targeting (RCA product = reverse complement of padlock)
+    if "Cas12a Core (Pad)" in df_res.columns:
+        _comp = {"A": "T", "T": "A", "G": "C", "C": "G", "N": "N", "U": "A"}
+        _rc = lambda x: "".join(_comp.get(bb, "N") for bb in str(x).upper()[::-1])
+        df_res = df_res.copy()
+        df_res["crRNA Spacer (RNA)"] = df_res["Cas12a Core (Pad)"].apply(lambda x: str(x).upper().replace("T", "U"))
+        df_res["Cas12a Target on RCA (5to3)"] = df_res["Cas12a Core (Pad)"].apply(_rc)
 
-    # DataFrame
-    st.dataframe(df_res, use_container_width=True)
-
-    # Download Button
-    # Excel conversion
-    buffer = io.BytesIO()
-    with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-        df_res.to_excel(writer, index=False, sheet_name='Padlock Candidates')
-    
-    st.download_button(
-        label="📥 Download Results as Excel",
-        data=buffer.getvalue(),
-        file_name=f"padlock_design_{target_name}.xlsx",
-        mime="application/vnd.ms-excel"
+    # ---- Results header ----
+    _tname = target_name if target_name else "target"
+    st.markdown(
+        "<div class='pd-hero' style='margin-top:6px'>"
+        f"<h1 style='font-size:1.4rem'>🎉 Design Results <span class='pd-grad'>{_tname}</span></h1>"
+        f"<p>{len(df_res)} candidate(s) · ranked by penalty score (lower = better)</p>"
+        "</div>",
+        unsafe_allow_html=True,
     )
 
-    # Detailed View Expander
-    with st.expander("🔍 Detailed Sequence View"):
-        for i, row in df_res.iterrows():
-            st.markdown(f"**#{row.get('Candidate ID', i+1)}**")
-            padlock_seq_full = row.get("Padlock Sequence (5'-P)", "N/A")
-            structure = row.get("Secondary Structure", "")
-            
-            # --- Column for main info and image ---
-            col_det1, col_det2 = st.columns([2, 1])
-            
-            with col_det1:
-                st.code(f"Padlock: {padlock_seq_full}")
-                st.text(f"Spacer: {row.get('Spacer (Pad)', 'N/A')} | Cas12a Core: {row.get('Cas12a Core (Pad)', 'N/A')}")
-                if structure:
-                    st.text(f"Structure: {structure}")
-            
-            with col_det2:
-                if structure and padlock_seq_full != "N/A":
-                    try:
-                        clean_seq = padlock_seq_full.replace("[5'-P]-", "")
-                        img_buf = plot_structure(
-                            clean_seq, 
-                            structure, 
-                            title=f"Candidate #{row.get('Candidate ID', i+1)}"
-                        )
-                        st.image(img_buf, caption="Predicted 2D Structure", use_container_width=True)
-                    except Exception as e:
-                        st.warning(f"Could not visualize structure: {e}")
+    # ---- Summary metrics ----
+    m1, m2, m3, m4 = st.columns(4)
+    with m1:
+        st.metric("Candidates", len(df_res))
+    with m2:
+        best_pen = df_res["Penalty Score"].min() if "Penalty Score" in df_res.columns else None
+        st.metric("Best Penalty", f"{best_pen:.2f}" if best_pen is not None else "—")
+    with m3:
+        avg_tm = df_res["Padlock Tm"].mean() if "Padlock Tm" in df_res.columns else 0
+        st.metric("Avg. Padlock Tm", f"{avg_tm:.1f} °C")
+    with m4:
+        avg_dg = df_res["Padlock ΔG (kcal/mol)"].mean() if "Padlock ΔG (kcal/mol)" in df_res.columns else 0
+        st.metric("Avg. ΔG", f"{avg_dg:.2f}")
 
-            # --- Full Analysis Report ---
-            st.markdown("---")
-            
-            # Generate and display the detailed report
-            report_str = generate_detailed_report(row)
-            st.code(report_str)
-            
-            st.markdown("---")
+    # ---- Ranked table (key columns first, all data retained) ----
+    _sec("Ranked Candidates")
+    st.caption("Lower **Penalty Score** = better. **Warning** flags an over-structured 5′ arm or Cas12a zone.")
+    _preferred = [
+        "Candidate ID", "Penalty Score", "Warning", "Spacer GC%",
+        "Padlock Tm", "Padlock ΔG (kcal/mol)", "Calculated ΔG",
+        "Padlock Sequence (5'-P)", "Spacer (Pad)", "Cas12a Core (Pad)",
+        "crRNA Spacer (RNA)", "Cas12a Target on RCA (5to3)",
+    ]
+    _cols = [c for c in _preferred if c in df_res.columns] + [c for c in df_res.columns if c not in _preferred]
+    st.dataframe(df_res[_cols], use_container_width=True, hide_index=True)
+
+    # ---- Downloads ----
+    _sec("Export")
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
+        df_res.to_excel(writer, index=False, sheet_name="Padlock Candidates")
+    _d1, _d2 = st.columns(2)
+    with _d1:
+        st.download_button(
+            label="📥 Results (Excel)",
+            data=buffer.getvalue(),
+            file_name=f"padlock_design_{target_name}.xlsx",
+            mime="application/vnd.ms-excel",
+            use_container_width=True,
+        )
+    with _d2:
+        if st.session_state.get("run_config"):
+            st.download_button(
+                label="🧾 Run Config (JSON)",
+                data=json.dumps(st.session_state.run_config, indent=2, ensure_ascii=False),
+                file_name=f"run_config_{target_name}.json",
+                mime="application/json",
+                use_container_width=True,
+            )
+    st.caption("crRNA Spacer = Cas12a Core (as RNA); the Cas12a target on the RCA product is its reverse complement. Confirm orientation for your Cas12a variant (e.g., LbCas12a).")
+
+    # ---- Inspect a single candidate ----
+    _sec("Inspect Candidate")
+    _ids = [df_res.iloc[k].get("Candidate ID", k + 1) for k in range(len(df_res))]
+    _sel = st.selectbox(
+        "Select a candidate to view details",
+        options=list(range(len(df_res))),
+        format_func=lambda k: f"#{_ids[k]}  ·  penalty {df_res.iloc[k].get('Penalty Score', '—')}",
+    )
+    row = df_res.iloc[_sel]
+    padlock_seq_full = row.get("Padlock Sequence (5'-P)", "N/A")
+    structure = row.get("Secondary Structure", "")
+
+    col_det1, col_det2 = st.columns([2, 1])
+    with col_det1:
+        st.code(f"Padlock: {padlock_seq_full}")
+        st.text(f"Spacer: {row.get('Spacer (Pad)', 'N/A')} | Cas12a Core: {row.get('Cas12a Core (Pad)', 'N/A')}")
+        if "crRNA Spacer (RNA)" in df_res.columns:
+            st.text(f"crRNA Spacer: {row.get('crRNA Spacer (RNA)', 'N/A')}")
+        if structure:
+            st.text(f"Structure: {structure}")
+
+    with col_det2:
+        if structure and padlock_seq_full != "N/A":
+            try:
+                clean_seq = padlock_seq_full.replace("[5'-P]-", "")
+                img_buf = plot_structure(
+                    clean_seq,
+                    structure,
+                    title=f"Candidate #{row.get('Candidate ID', _sel + 1)}",
+                )
+                st.image(img_buf, caption="Predicted 2D Structure", use_container_width=True)
+            except Exception as e:
+                st.warning(f"Could not visualize structure: {e}")
+
+    # Full analysis report
+    st.markdown("---")
+    report_str = generate_detailed_report(row)
+    st.code(report_str)
