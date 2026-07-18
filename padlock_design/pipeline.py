@@ -2,6 +2,7 @@ import pandas as pd
 import pickle
 import os
 import time
+import math
 import subprocess # Added for local BLAST
 import tempfile   # Added for local BLAST
 import io # Added for local BLAST XML parsing
@@ -42,6 +43,7 @@ def generate_pool(spacer_priorities, cas12a_priorities, pool_file="pools_by_leng
     return spacer_pools, cas12a_pools
 
 def assemble_and_filter_padlocks(name, seq, spacer_pools, cas12a_pools, num_to_generate=30,
+                                 seed_offset=0,
                                  validation_params=None, max_attempts=1_000_000,
                                  time_limit_sec=None, progress_cb=None):
     """
@@ -59,6 +61,7 @@ def assemble_and_filter_padlocks(name, seq, spacer_pools, cas12a_pools, num_to_g
     DEFAULT_VALIDATION_PARAMS = {
         # 01: Poly-N repeats (inner region only)
         "has_long_homopolymer(inner_seq)": 3,
+        "has_g_quadruplex(padlock_seq)": 3,
         # 02: Padlock self-complementarity (hairpin risk)
         "has_self_complementarity(padlock_seq)": 7,
         # 03: Tandem repeats & palindrome (inner)
@@ -91,7 +94,7 @@ def assemble_and_filter_padlocks(name, seq, spacer_pools, cas12a_pools, num_to_g
         split_res,
         active_params,
         NUM_PADLOCKS=num_to_generate,
-        seed_offset=0,
+        seed_offset=seed_offset,
         max_attempts=max_attempts,
         time_limit_sec=time_limit_sec,
         progress_cb=progress_cb,
@@ -99,7 +102,50 @@ def assemble_and_filter_padlocks(name, seq, spacer_pools, cas12a_pools, num_to_g
 
     return results
 
-def analyze_and_sort_padlocks(df, dg_threshold=-3.5, rnafold_path=None):
+def _penalty_features(row):
+    """Accessibility-aware penalty (ported from validated notebook). Lower = better."""
+    spacer = str(row.get("Spacer (Pad)", ""))
+    cas12a = str(row.get("Cas12a Core (Pad)", ""))
+    try:
+        arm_len = int(row.get("miRNA 5' Arm len", 0))
+    except Exception:
+        arm_len = 0
+    cas_start = arm_len + len(spacer)
+    cas_end = cas_start + len(cas12a)
+    gc_pct = (sum(1 for b in spacer if b in "GC") / len(spacer) * 100.0) if spacer else 0.0
+    try:
+        dg = float(row.get("Calculated ΔG", 0.0))
+    except Exception:
+        dg = 0.0
+    st = str(row.get("Secondary Structure", "")).strip()
+
+    def max_paired_run(segment):
+        run = mx = 0; prev = ""
+        for c in segment:
+            if c in "()":
+                run = run + 1 if c == prev else 1
+                mx = max(mx, run)
+            else:
+                run = 0
+            prev = c
+        return mx
+
+    f_gc_low  = 1.0 if gc_pct < 40 else 0.0
+    f_gc_high = 1.0 if gc_pct > 60 else 0.0
+    f_dg = 1.0 / (1.0 + math.exp(2.0 * (dg - (-4.0))))
+    f_arm = 0.0 if dg <= -5.0 else (1.0 if max_paired_run(st[0:arm_len]) >= 4 else 0.0)
+    f_cas = 0.0 if dg <= -5.0 else (1.0 if max_paired_run(st[cas_start:cas_end]) >= 6 else 0.0)
+
+    W = {"gc_low": 4.176, "gc_high": 2.453, "dg": 3.026, "arm": 5.172, "cas": 2.854}
+    penalty = (W["gc_low"] * f_gc_low + W["gc_high"] * f_gc_high +
+               W["dg"] * f_dg + W["arm"] * f_arm + W["cas"] * f_cas)
+    warn = []
+    if f_arm: warn.append("arm")
+    if f_cas: warn.append("cas")
+    return gc_pct, penalty, ("+".join(warn) if warn else "OK")
+
+
+def analyze_and_sort_padlocks(df, dg_threshold=-3.5, rnafold_path=None, progress_cb=None):
     """
     Analyzes sequences and filters out candidates with ΔG <= threshold (too stable).
     Returns a filtered dataframe sorted by stability.
@@ -115,6 +161,8 @@ def analyze_and_sort_padlocks(df, dg_threshold=-3.5, rnafold_path=None):
     print(f"{'ID':<4} | {'Target Name':<15} | {'ΔG (kcal/mol)':<15} | {'Status'}")
     print("-" * 85)
 
+    total = len(df)
+    done = 0
     for idx, row in df.iterrows():
         raw_seq = str(row["Padlock Sequence (5'-P)"])
         clean_seq = raw_seq.replace("[5'-P]-", "").strip()
@@ -130,6 +178,9 @@ def analyze_and_sort_padlocks(df, dg_threshold=-3.5, rnafold_path=None):
         
         status = "PASS" if dg > dg_threshold else "REJECTED (Too Stable)"
         print(f"{row['Candidate ID']:<4} | {row['Target Name']:<15} | {dg:>10.2f}     | {status}")
+        done += 1
+        if progress_cb is not None:
+            progress_cb(done, total)
 
     df['Calculated ΔG'] = results_dg
     df['Secondary Structure'] = results_struct
@@ -138,8 +189,18 @@ def analyze_and_sort_padlocks(df, dg_threshold=-3.5, rnafold_path=None):
     filtered_df = df[df['Calculated ΔG'] > dg_threshold].copy()
     rejected_count = initial_count - len(filtered_df)
     
-    # Sort by stability (highest ΔG first = least folded)
-    sorted_df = filtered_df.sort_values(by='Calculated ΔG', ascending=False).reset_index(drop=True)
+    # ===== Multi-feature penalty scoring (accessibility-aware ranking) =====
+    if not filtered_df.empty:
+        _feats = filtered_df.apply(_penalty_features, axis=1, result_type="expand")
+        filtered_df["Spacer GC%"]    = _feats[0].round(1)
+        filtered_df["Penalty Score"] = _feats[1].round(3)
+        filtered_df["Warning"]       = _feats[2]
+        # Best first: lowest penalty; ties broken by least-folded (highest ΔG)
+        sorted_df = filtered_df.sort_values(
+            by=["Penalty Score", "Calculated ΔG"], ascending=[True, False]
+        ).reset_index(drop=True)
+    else:
+        sorted_df = filtered_df
     
     print("-" * 85)
     print(f"Filtering complete!")
@@ -322,11 +383,16 @@ def evaluate_candidate_safety(hits):
     is_safe = len(reasons) == 0
     return is_safe, reasons
 
-def run_blast_validation(sorted_results, target_count=5, blast_mode="Online NCBI BLAST", blast_exe_path="", blast_db_path=""):
+def run_blast_validation(sorted_results, target_count=5, blast_mode="Online NCBI BLAST", blast_exe_path="", blast_db_path="", progress_cb=None):
     passed_candidates = []
+    total = len(sorted_results)
+    screened = 0
     
     for idx, row in sorted_results.iterrows():
         candidate_id = row.get('Candidate ID', idx + 1)
+        screened += 1
+        if progress_cb is not None:
+            progress_cb(screened, total, len(passed_candidates), target_count)
         print(f"\n{'='*30} [STARTING VALIDATION: CANDIDATE #{candidate_id}] {'='*30}")
 
         # Determine which BLAST function to use
@@ -382,6 +448,8 @@ def run_blast_validation(sorted_results, target_count=5, blast_mode="Online NCBI
         # SUCCESS
         print(f"\n[SUCCESS] CANDIDATE #{candidate_id} IS VERIFIED AS SAFE.")
         passed_candidates.append(row)
+        if progress_cb is not None:
+            progress_cb(screened, total, len(passed_candidates), target_count)
         
         if len(passed_candidates) >= target_count:
             print(f"\n[INFO] TARGET COUNT ({target_count}) REACHED. TERMINATING VALIDATION PROCESS.")
