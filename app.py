@@ -122,7 +122,23 @@ st.markdown("""
     .pd-pick-ok{font-size:.8rem;color:#06141c;background:#3ef2b3;border-radius:999px;padding:2px 10px;font-weight:700}
     .pd-report{background:rgba(3,6,16,.72);border:1px solid var(--line);border-radius:10px;
         padding:14px 16px;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:.82rem;
-        line-height:1.55;white-space:pre;margin:0}
+        line-height:1.55;white-space:pre-wrap;word-break:break-word;margin:0}
+    /* ---- Inspect: prompt, selectbox, banner, detail ---- */
+    .pd-selprompt{font-family:'Sora',sans-serif;font-weight:700;font-size:1.02rem;color:#7dd3fc;
+        margin:.3rem 0 .35rem;display:flex;align-items:center;gap:8px}
+    [data-baseweb="select"]>div{border:1.6px solid rgba(56,189,248,.55)!important;
+        background:rgba(56,189,248,.07)!important;border-radius:10px!important;
+        box-shadow:0 0 0 3px rgba(56,189,248,.09)}
+    .pd-pick-lead{color:#93a0c4;font-size:.92rem}
+    .pd-pick-id{font-family:'Sora',sans-serif;font-weight:800;font-size:1.1rem;color:#7dd3fc}
+    .pd-detail{margin:.1rem 0 .2rem}
+    .pd-pad-label{font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;color:#93a0c4;margin-bottom:5px}
+    .pd-pad-seq{font-family:'JetBrains Mono',monospace;font-size:1.06rem;line-height:1.45;color:#eaf0ff;
+        background:rgba(56,189,248,.08);border:1px solid rgba(56,189,248,.28);border-radius:10px;
+        padding:11px 13px;word-break:break-all;margin-bottom:10px}
+    .pd-fields div{margin:3px 0;font-size:.82rem;font-family:'JetBrains Mono',monospace}
+    .pd-fields .pd-k{display:inline-block;min-width:104px;color:#8f9dc2}
+    .pd-fields .pd-v{color:#c7d2f0;word-break:break-all}
 </style>
 """, unsafe_allow_html=True)
 
@@ -570,34 +586,55 @@ if st.session_state.results is not None:
 
     # ---- Inspect a single candidate ----
     _sec("Inspect Candidate")
+    st.markdown("<div class='pd-selprompt'>🔎 Select a candidate below to view its full report</div>", unsafe_allow_html=True)
     _ids = [df_res.iloc[k].get("Candidate ID", k + 1) for k in range(len(df_res))]
     _sel = st.selectbox(
         "Select a candidate to view details",
         options=list(range(len(df_res))),
         format_func=lambda k: f"#{_ids[k]}  ·  penalty {df_res.iloc[k].get('Penalty Score', '—')}",
+        label_visibility="collapsed",
     )
     row = df_res.iloc[_sel]
     padlock_seq_full = row.get("Padlock Sequence (5'-P)", "N/A")
     structure = row.get("Secondary Structure", "")
 
+    import html as _html
     _pen = row.get("Penalty Score", "—")
     _warn = str(row.get("Warning", "") or "")
     _badge = (f"<span class='pd-pick-warn'>⚠ {_warn}</span>"
               if _warn and _warn != "OK" else "<span class='pd-pick-ok'>✓ OK</span>")
     st.markdown(
-        f"<div class='pd-pick'>Viewing <b>Candidate #{_ids[_sel]}</b>"
-        f"<span class='pd-pick-tag'>penalty {_pen}</span>{_badge}</div>",
+        "<div class='pd-pick'>"
+        "<span class='pd-pick-lead'>Viewing</span>"
+        f"<span class='pd-pick-id'>Candidate #{_ids[_sel]}</span>"
+        f"<span class='pd-pick-tag'>penalty {_pen}</span>"
+        f"{_badge}</div>",
         unsafe_allow_html=True,
     )
 
     col_det1, col_det2 = st.columns([2, 1])
     with col_det1:
-        st.code(f"Padlock: {padlock_seq_full}", language=None)
-        st.text(f"Spacer: {row.get('Spacer (Pad)', 'N/A')} | Cas12a Core: {row.get('Cas12a Core (Pad)', 'N/A')}")
-        if "crRNA Spacer (RNA)" in df_res.columns:
-            st.text(f"crRNA Spacer: {row.get('crRNA Spacer (RNA)', 'N/A')}")
+        _clean_pad = padlock_seq_full.replace("[5'-P]-", "")
+        _spacer = str(row.get("Spacer (Pad)", "N/A"))
+        _cas = str(row.get("Cas12a Core (Pad)", "N/A"))
+        _crrna = str(row.get("crRNA Spacer (RNA)", "")) if "crRNA Spacer (RNA)" in df_res.columns else ""
+        _fields = (
+            f"<div><span class='pd-k'>Spacer</span><span class='pd-v'>{_html.escape(_spacer)}</span></div>"
+            f"<div><span class='pd-k'>Cas12a Core</span><span class='pd-v'>{_html.escape(_cas)}</span></div>"
+        )
+        if _crrna:
+            _fields += f"<div><span class='pd-k'>crRNA Spacer</span><span class='pd-v'>{_html.escape(_crrna)}</span></div>"
         if structure:
-            st.text(f"Structure: {structure}")
+            _fields += f"<div><span class='pd-k'>Structure</span><span class='pd-v'>{_html.escape(str(structure))}</span></div>"
+        st.markdown(
+            "<div class='pd-detail'>"
+            "<div class='pd-pad-label'>Padlock (5′-P)</div>"
+            f"<div class='pd-pad-seq'>{_html.escape(padlock_seq_full)}</div>"
+            f"<div class='pd-fields'>{_fields}</div>"
+            "</div>",
+            unsafe_allow_html=True,
+        )
+        st.code(_clean_pad, language=None)
 
     with col_det2:
         if structure and padlock_seq_full != "N/A":
@@ -623,4 +660,4 @@ if st.session_state.results is not None:
             _rlines.append(f"<span style='color:#38bdf8;font-weight:700'>{_esc}</span>")
         else:
             _rlines.append(f"<span style='color:#e6edff'>{_esc}</span>")
-    st.markdown("<pre class='pd-report'>" + "\n".join(_rlines) + "</pre>", unsafe_allow_html=True)
+    st.markdown("<pre class='pd-report'>" + "<br>".join(_rlines) + "</pre>", unsafe_allow_html=True)
