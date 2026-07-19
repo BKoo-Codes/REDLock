@@ -146,7 +146,7 @@ st.markdown("""
     .pd-pad-label{font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;color:#93a0c4;margin-bottom:5px}
     .pd-pad-seq{font-family:'JetBrains Mono',monospace;font-size:1.06rem;line-height:1.45;color:#eaf0ff;
         background:rgba(56,189,248,.08);border:1px solid rgba(56,189,248,.28);border-radius:10px;
-        padding:11px 13px;word-break:break-all;margin-bottom:10px}
+        padding:11px 13px;white-space:nowrap;overflow-x:auto;margin-bottom:10px}
     .pd-fields div{margin:3px 0;font-size:.82rem;font-family:'JetBrains Mono',monospace}
     .pd-fields .pd-k{display:inline-block;min-width:104px;color:#8f9dc2}
     .pd-fields .pd-v{color:#c7d2f0;word-break:break-all}
@@ -208,6 +208,7 @@ with st.sidebar:
         placeholder="e.g. UAGCUUAUCAGACUGAUGUUGA",
         help="Target miRNA sequence. U is auto-converted to T.",
     )
+    target_seq = "".join(c for c in target_seq.upper() if c in "ACGUTN")
     _clean = "".join(c for c in target_seq.upper() if c in "ACGUT")
     if _clean:
         _gc = round(sum(c in "GC" for c in _clean) / len(_clean) * 100, 1)
@@ -623,6 +624,16 @@ if st.session_state.results is not None:
         unsafe_allow_html=True,
     )
 
+    # Padlock sequence — full width, single line (no wrap avoids stray copy spaces)
+    _pad_disp = str(padlock_seq_full).replace(" ", "")
+    st.markdown(
+        "<div class='pd-detail'>"
+        "<div class='pd-pad-label'>Padlock (5′-P)</div>"
+        f"<div class='pd-pad-seq'>{_html.escape(_pad_disp)}</div>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
     col_det1, col_det2 = st.columns([2, 1])
     with col_det1:
         _spacer = str(row.get("Spacer (Pad)", "N/A"))
@@ -636,14 +647,7 @@ if st.session_state.results is not None:
             _fields += f"<div><span class='pd-k'>crRNA Spacer</span><span class='pd-v'>{_html.escape(_crrna)}</span></div>"
         if structure:
             _fields += f"<div><span class='pd-k'>Structure</span><span class='pd-v'>{_html.escape(str(structure))}</span></div>"
-        st.markdown(
-            "<div class='pd-detail'>"
-            "<div class='pd-pad-label'>Padlock (5′-P)</div>"
-            f"<div class='pd-pad-seq'>{_html.escape(padlock_seq_full)}</div>"
-            f"<div class='pd-fields'>{_fields}</div>"
-            "</div>",
-            unsafe_allow_html=True,
-        )
+        st.markdown(f"<div class='pd-fields'>{_fields}</div>", unsafe_allow_html=True)
 
     with col_det2:
         if structure and padlock_seq_full != "N/A":

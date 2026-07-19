@@ -52,7 +52,7 @@ def assemble_and_filter_padlocks(name, seq, spacer_pools, cas12a_pools, num_to_g
     provided, it REPLACES the defaults entirely (no silent merge).
     """
     target_name = name
-    target_seq = seq.replace("U", "T")  # Ensure DNA sequence
+    target_seq = "".join(seq.split()).upper().replace("U", "T")  # strip whitespace + ensure DNA
 
     split_res = find_best_split(target_name, target_seq)
     print_split_report(split_res)
