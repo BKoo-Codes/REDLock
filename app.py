@@ -15,8 +15,6 @@ from padlock_design.pipeline import (
 from padlock_design.visualization import plot_structure
 from padlock_design.reporter import generate_detailed_report
 
-# ... existing imports ...
-
 # Page Config
 st.set_page_config(
     page_title="PadDx_miR Designer",
@@ -94,11 +92,64 @@ st.markdown("""
 
     /* ---- Code blocks ---- */
     .stApp pre,.stApp code{background:rgba(3,6,16,.65)!important}
-    .stApp code{color:#3ef2b3}
+    .stApp code{color:#e6edff}
 
     /* ---- Misc accents ---- */
     hr{border-color:var(--line)}
     a{color:#38bdf8}
+    /* ---- Sidebar brand + section headers ---- */
+    .pd-side-head{display:flex;align-items:center;gap:11px;margin:.1rem 0 .5rem}
+    .pd-side-dot{font-size:1.55rem;filter:drop-shadow(0 0 9px rgba(62,242,179,.6))}
+    .pd-side-title{font-family:'Sora',sans-serif;font-weight:800;font-size:1.15rem;line-height:1;
+        background:linear-gradient(115deg,#5eead4,#38bdf8 55%,#a78bfa);
+        -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+    .pd-side-sub{color:#93a0c4;font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;margin-top:3px}
+    .pd-sec{font-family:'Sora',sans-serif;font-size:.78rem;font-weight:700;letter-spacing:.09em;
+        text-transform:uppercase;color:#9fb0d9;margin:1rem 0 .4rem;padding-top:.6rem;border-top:1px solid var(--line)}
+    [data-testid="stSidebar"] .stSlider label,[data-testid="stSidebar"] .stNumberInput label,
+    [data-testid="stSidebar"] .stTextInput label,[data-testid="stSidebar"] .stTextArea label{
+        font-size:.82rem;color:#c7d2f0;font-weight:500}
+    /* ---- Selected-candidate banner + report ---- */
+    .pd-pick{display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+        background:linear-gradient(180deg,rgba(56,189,248,.14),rgba(155,123,255,.08));
+        border:1px solid rgba(56,189,248,.35);border-left:4px solid #38bdf8;border-radius:12px;
+        padding:12px 16px;margin:.2rem 0 .8rem;font-size:1.02rem;color:#eaf0ff;
+        box-shadow:0 8px 26px -16px rgba(56,189,248,.7)}
+    .pd-pick b{color:#7dd3fc}
+    .pd-pick-tag{font-family:'JetBrains Mono',monospace;font-size:.8rem;color:#cbd5f5;
+        background:rgba(255,255,255,.06);border:1px solid var(--line);border-radius:999px;padding:2px 10px}
+    .pd-pick-warn{font-size:.8rem;color:#06141c;background:#ffb454;border-radius:999px;padding:2px 10px;font-weight:700}
+    .pd-pick-ok{font-size:.8rem;color:#06141c;background:#3ef2b3;border-radius:999px;padding:2px 10px;font-weight:700}
+    .pd-report{background:rgba(3,6,16,.72);border:1px solid var(--line);border-radius:12px;
+        padding:14px 18px;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:.84rem;
+        line-height:1.5;margin:0}
+    .pd-report>div{white-space:pre-wrap;word-break:break-word}
+    .pd-r-head{color:#38bdf8;font-weight:800;font-size:.95rem;letter-spacing:.02em;
+        margin:1.05rem 0 .4rem;padding-bottom:.28rem;border-bottom:1px solid rgba(56,189,248,.28)}
+    .pd-report>.pd-r-head:first-child{margin-top:0}
+    .pd-r-rule{height:1px;background:var(--line);margin:.55rem 0}
+    .pd-r-gap{height:.35rem}
+    .pd-r-key{color:#3ef2b3;font-weight:700;margin:.2rem 0 .1rem}
+    .pd-r-item{padding-left:12px;border-left:2px solid rgba(56,189,248,.22);margin:1px 0}
+    .pd-r-k{color:#8f9dc2}
+    .pd-r-v{color:#eaf0ff;margin-left:8px}
+    /* ---- Inspect: prompt, selectbox, banner, detail ---- */
+    .pd-selprompt{font-family:'Sora',sans-serif;font-weight:700;font-size:1.02rem;color:#7dd3fc;
+        margin:.3rem 0 .35rem;display:flex;align-items:center;gap:8px}
+    [data-baseweb="select"]>div{border:1.6px solid rgba(56,189,248,.6)!important;
+        background:rgba(56,189,248,.09)!important;border-radius:10px!important;
+        box-shadow:0 0 0 3px rgba(56,189,248,.10);min-height:50px}
+    [data-baseweb="select"]>div>div{font-size:1.14rem!important;font-weight:800!important;color:#eaf0ff!important}
+    .pd-pick-lead{color:#93a0c4;font-size:.92rem}
+    .pd-pick-id{font-family:'Sora',sans-serif;font-weight:800;font-size:1.1rem;color:#7dd3fc}
+    .pd-detail{margin:.1rem 0 .2rem}
+    .pd-pad-label{font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;color:#93a0c4;margin-bottom:5px}
+    .pd-pad-seq{font-family:'JetBrains Mono',monospace;font-size:1.06rem;line-height:1.45;color:#eaf0ff;
+        background:rgba(56,189,248,.08);border:1px solid rgba(56,189,248,.28);border-radius:10px;
+        padding:11px 13px;white-space:nowrap;overflow-x:auto;margin-bottom:10px}
+    .pd-fields div{margin:3px 0;font-size:.82rem;font-family:'JetBrains Mono',monospace}
+    .pd-fields .pd-k{display:inline-block;min-width:104px;color:#8f9dc2}
+    .pd-fields .pd-v{color:#c7d2f0;word-break:break-all}
 </style>
 """, unsafe_allow_html=True)
 
@@ -110,85 +161,134 @@ def parse_int_list(input_str, default):
         return default
 
 # Sidebar - Configuration
-with st.sidebar:
-    st.image("https://img.icons8.com/color/96/000000/dna-helix.png", width=80)
-    st.title("Settings")
-    
-    st.markdown("### 🎯 Target Parameters")
-    target_name = st.text_input("Target miRNA Name", value="", help="Name of the target miRNA")
-    target_seq = st.text_area("Target miRNA Sequence (RNA/DNA)", value="", height=100, help="Sequence of the target miRNA. U will be automatically converted to T.")
-
-    st.markdown("### 🧬 Structure Design")
-    spacer_length_single = st.number_input("Spacer Length (nt)", min_value=0, max_value=30, value=10, help="Length of the spacer sequence to prioritize. (Optimized default: 10)")
-    cas12a_length_single = st.number_input("Cas12a Core Length (nt)", min_value=20, max_value=24, value=20, help="Length of the Cas12a core sequence to prioritize.")
-    
-    gc_spacer = st.slider("Spacer GC Content (%)", 0, 100, (35, 60))
-    gc_cas = st.slider("Cas12a GC Content (%)", 0, 100, (35, 65))
-    
-    pool_samples = st.select_slider("Pool Sample Size", options=[10000, 50000, 100000, 200000, 500000, 1000000], value=200000, help="Number of random sequences to generate for initial screening. Higher = better diversity but slower.")
-
-    st.markdown("### ⚙️ General Options")
-    num_candidates = st.number_input("Number of Candidates (generate)", min_value=1, max_value=2000, value=2000, step=10, help="How many validated padlocks to generate before ranking/BLAST. Up to 2000.")
-    gen_time_min = st.number_input("Generation Time Limit (min)", min_value=1, max_value=60, value=5, help="Max time for the LOCAL generation step. Safe to increase. Returns whatever was found when time runs out.")
-    max_attempts = st.number_input("Max Attempts", min_value=10000, max_value=50_000_000, value=5_000_000, step=100000, help="Upper bound on assembly attempts. Kept high so the time limit above is the effective cap.")
-    random_seed = st.number_input("Random Seed", min_value=0, max_value=999999, value=15, help="Fix for reproducible designs. Same seed + same settings = same candidates.")
-    dg_threshold = st.number_input("Delta G Threshold (kcal/mol)", value=-3.5, step=0.5, help="Stability threshold. Higher values (less negative) are less stable/better.")
-    
-    # Advanced Settings Expander
-    with st.expander("🛠️ Advanced Filters (Expert)", expanded=False):
-        st.caption("Optimized rule set (from validated notebook). Higher = less strict.")
-        st.markdown("**Structural (inner region)**")
-        hp_inner   = st.number_input("Inner Poly-N (homopolymer)", 2, 10, 3, help="Min single-base run inside the inner region to reject.")
-        sc_padlock = st.number_input("Padlock Hairpin (self-comp)", 4, 12, 7, help="Min self-complementary match in the full padlock to reject.")
-        tr_inner   = st.number_input("Inner Tandem Repeat", 4, 12, 6, help="Min tandem-repeat length in inner region to reject.")
-        pal_inner  = st.number_input("Inner Palindrome", 4, 12, 6, help="Min palindrome length in extended inner region to reject.")
-        sc_module  = st.number_input("Module Hairpin (Spacer/Cas)", 3, 10, 5, help="Min self-complementary match within Spacer or Cas12a core.")
-
-        st.markdown("---")
-        st.markdown("**Cross-Hybridization**")
-        cross_module = st.number_input("Module & Global Cross-Hyb", 3, 10, 5, help="Spacer↔Cas12a and Padlock↔module interaction.")
-        cross_arm    = st.number_input("miRNA-Arm Cross-Hyb", 2, 10, 4, help="Arm↔Cas12a and inner↔arm interaction (arm↔spacer fixed at 3).")
-        cross_rca    = st.number_input("RCA↔miRNA Cross-Hyb", 3, 12, 7, help="RCA product re-binding the original miRNA.")
-        avoid_g4     = st.checkbox("Avoid G-quadruplex (G4)", value=True, help="Reject GGG-N-GGG-N-GGG-N-GGG and its C-rich complement. G4 stalls phi29 & Cas12a.")
-
 import shutil
 
-# ... existing imports ...
 
-# Helper to find RNAfold
 def find_rnafold_path():
     # 1. Check system PATH
     path = shutil.which("RNAfold")
     if path:
         return path
-        
-    # 2. Check common Windows paths
+    # 2. Check common Windows install locations
     common_paths = [
         r"C:\Program Files (x86)\ViennaRNA Package\RNAfold.exe",
         r"C:\Program Files\ViennaRNA Package\RNAfold.exe",
         r"C:\ViennaRNA Package\RNAfold.exe",
-        r"C:\ViennaRNA\RNAfold.exe"
+        r"C:\ViennaRNA\RNAfold.exe",
     ]
     for p in common_paths:
         if os.path.exists(p):
             return p
-            
     return ""
 
-# Sidebar - Configuration
+
+def _sec(label):
+    """Render a styled sidebar section header."""
+    st.markdown(f"<div class='pd-sec'>{label}</div>", unsafe_allow_html=True)
+
+
 with st.sidebar:
-    # ... existing settings ...
-    
-    st.markdown("### 🛡️ Validation & Stability")
-    
-    # RNAfold Configuration
-    detected_path = find_rnafold_path()
-    rnafold_path = st.text_input(
-        "RNAfold Path", 
-        value=detected_path, 
-        help="Full path to RNAfold.exe. If empty, dG calculation will be skipped (0.0)."
+    st.markdown(
+        "<div class='pd-side-head'>"
+        "<span class='pd-side-dot'>🧬</span>"
+        "<div><div class='pd-side-title'>PadDx_miR</div>"
+        "<div class='pd-side-sub'>Design Settings</div></div>"
+        "</div>",
+        unsafe_allow_html=True,
     )
-    
+
+    # ─────────────────────────── ① Target ───────────────────────────
+    _sec("① Target miRNA")
+    target_name = st.text_input(
+        "Name", value="", placeholder="e.g. hsa-miR-21-5p",
+        help="Name of the target miRNA.",
+    )
+    target_seq = st.text_area(
+        "Sequence (RNA/DNA)", value="", height=90,
+        placeholder="e.g. UAGCUUAUCAGACUGAUGUUGA",
+        help="Target miRNA sequence. U is auto-converted to T.",
+    )
+    _clean = "".join(c for c in target_seq.upper() if c in "ACGUT")
+    if _clean:
+        _gc = round(sum(c in "GC" for c in _clean) / len(_clean) * 100, 1)
+        st.caption(f"Length **{len(_clean)} nt**  ·  GC **{_gc}%**")
+
+    # ────────────────────────── ② Structure ─────────────────────────
+    _sec("② Structure Design")
+    _c1, _c2 = st.columns(2)
+    with _c1:
+        spacer_length_single = st.number_input(
+            "Spacer (nt)", min_value=0, max_value=30, value=10,
+            help="Spacer length to prioritize. Optimized default: 10.",
+        )
+    with _c2:
+        cas12a_length_single = st.number_input(
+            "Cas12a Core (nt)", min_value=20, max_value=24, value=20,
+            help="Cas12a core length to prioritize.",
+        )
+    gc_spacer = st.slider("Spacer GC (%)", 0, 100, (35, 60))
+    gc_cas = st.slider("Cas12a GC (%)", 0, 100, (35, 65))
+    pool_samples = st.select_slider(
+        "Pool Sample Size",
+        options=[10000, 50000, 100000, 200000, 500000, 1000000],
+        value=200000,
+        help="Random sequences per length for initial screening. Higher = more diversity, slower.",
+    )
+
+    # ────────────────────────── ③ Generation ────────────────────────
+    _sec("③ Generation")
+    num_candidates = st.number_input(
+        "Candidates to generate", min_value=1, max_value=2000, value=2000, step=10,
+        help="How many validated padlocks to generate before ranking / BLAST. Up to 2000.",
+    )
+    _g1, _g2 = st.columns(2)
+    with _g1:
+        gen_time_min = st.number_input(
+            "Time limit (min)", min_value=1, max_value=60, value=5,
+            help="Max time for the LOCAL generation step. Safe to increase.",
+        )
+    with _g2:
+        random_seed = st.number_input(
+            "Random seed", min_value=0, max_value=999999, value=15,
+            help="Fix for reproducible designs. Same seed + settings = same candidates.",
+        )
+    dg_threshold = st.number_input(
+        "ΔG threshold (kcal/mol)", value=-3.5, step=0.5,
+        help="Stability cutoff. Higher (less negative) = less folded / better accessibility.",
+    )
+    with st.expander("Generation budget (advanced)", expanded=False):
+        max_attempts = st.number_input(
+            "Max attempts", min_value=10000, max_value=50_000_000, value=5_000_000, step=100000,
+            help="Upper bound on assembly attempts. Kept high so the time limit is the effective cap.",
+        )
+
+    # ─────────────────── Advanced Filters (expander) ─────────────────
+    with st.expander("🛠️ Advanced Filters (Expert)", expanded=False):
+        st.caption("Optimized rule set (validated). Higher = less strict.")
+        st.markdown("**Structural (inner region)**")
+        hp_inner = st.number_input("Inner Poly-N (homopolymer)", 2, 10, 3, help="Min single-base run inside the inner region to reject.")
+        sc_padlock = st.number_input("Padlock Hairpin (self-comp)", 4, 12, 7, help="Min self-complementary match in the full padlock to reject.")
+        tr_inner = st.number_input("Inner Tandem Repeat", 4, 12, 6, help="Min tandem-repeat length in inner region to reject.")
+        pal_inner = st.number_input("Inner Palindrome", 4, 12, 6, help="Min palindrome length in extended inner region to reject.")
+        sc_module = st.number_input("Module Hairpin (Spacer/Cas)", 3, 10, 5, help="Min self-complementary match within Spacer or Cas12a core.")
+        st.markdown("**Cross-Hybridization**")
+        cross_module = st.number_input("Module & Global Cross-Hyb", 3, 10, 5, help="Spacer↔Cas12a and Padlock↔module interaction.")
+        cross_arm = st.number_input("miRNA-Arm Cross-Hyb", 2, 10, 4, help="Arm↔Cas12a and inner↔arm interaction (arm↔spacer fixed at 3).")
+        cross_rca = st.number_input("RCA↔miRNA Cross-Hyb", 3, 12, 7, help="RCA product re-binding the original miRNA.")
+        avoid_g4 = st.checkbox("Avoid G-quadruplex (G4)", value=True, help="Reject GGG-N-GGG-N-GGG-N-GGG and its C-rich complement. G4 stalls phi29 & Cas12a.")
+
+    # ────────────────────────── ④ Validation ────────────────────────
+    _sec("④ Validation")
+    detected_path = find_rnafold_path()
+    st.markdown("**Thermodynamics (RNAfold)**")
+    if detected_path:
+        st.caption("✅ RNAfold auto-detected on this machine.")
+    else:
+        st.caption("⚠️ RNAfold not found — ΔG will default to 0.0.")
+    rnafold_path = st.text_input(
+        "RNAfold Path", value=detected_path,
+        help="Full path to RNAfold.exe. If empty, ΔG is skipped (0.0).",
+    )
     if st.button("Test RNAfold Path"):
         if rnafold_path and os.path.exists(rnafold_path):
             st.success("✅ RNAfold found!")
@@ -197,34 +297,30 @@ with st.sidebar:
         else:
             st.error("❌ File not found at this path.")
 
-    st.markdown("---")
-    st.markdown("### 💥 BLAST Validation")
     blast_mode = st.radio(
-        "Select BLAST Mode",
+        "BLAST Mode",
         options=["Online NCBI BLAST", "Local BLAST", "Skip BLAST"],
-        index=0, # Default to Online NCBI BLAST
-        help="Choose how to validate candidates against off-target sequences."
+        index=0,
+        help="How to validate candidates against off-target sequences.",
     )
-
-    blast_target = st.number_input("BLAST Pass Target", min_value=1, max_value=50, value=3, help="Stop BLAST as soon as this many candidates pass (top-ranked screened first). e.g. 3 gives you 3 verified candidates.")
-
+    blast_target = st.number_input(
+        "BLAST Pass Target", min_value=1, max_value=50, value=3,
+        help="Stop BLAST once this many candidates pass (top-ranked screened first). e.g. 3 gives 3 verified candidates.",
+    )
     blast_exe_path = ""
     blast_db_path = ""
-
     if blast_mode == "Local BLAST":
-        st.info("For local BLAST, you need to have NCBI BLAST+ installed and a local database prepared.")
+        st.info("Local BLAST requires NCBI BLAST+ installed and a local database.")
         blast_exe_path = st.text_input(
-            "Local BLAST Executable Path",
-            value="",
-            help="Full path to the blastn executable (e.g., C:\\blast\\bin\\blastn.exe)"
+            "Local BLAST Executable Path", value="",
+            help="Full path to blastn (e.g. C:\\blast\\bin\\blastn.exe).",
         )
         blast_db_path = st.text_input(
-            "Local BLAST Database Path",
-            value="",
-            help="Full path to your local BLAST database (e.g., C:\\blast\\db\\nt)"
+            "Local BLAST Database Path", value="",
+            help="Full path to your local BLAST database (e.g. C:\\blast\\db\\nt).",
         )
-        
-    st.markdown("---")
+
+    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
     run_btn = st.button("🚀 Run Design", type="primary")
 
 # Main Content
@@ -429,10 +525,7 @@ if run_btn:
 # Results Display
 if st.session_state.results is not None:
     st.divider()
-    st.subheader("🎉 Design Results")
-    
-    # Summary Metrics
-    col1, col2, col3 = st.columns(3)
+
     df_res = st.session_state.results
     # crRNA / Cas12a targeting (RCA product = reverse complement of padlock)
     if "Cas12a Core (Pad)" in df_res.columns:
@@ -441,76 +534,161 @@ if st.session_state.results is not None:
         df_res = df_res.copy()
         df_res["crRNA Spacer (RNA)"] = df_res["Cas12a Core (Pad)"].apply(lambda x: str(x).upper().replace("T", "U"))
         df_res["Cas12a Target on RCA (5to3)"] = df_res["Cas12a Core (Pad)"].apply(_rc)
-    with col1:
-        st.metric("Candidates Generated", len(df_res))
-    with col2:
-        avg_tm = df_res['Padlock Tm'].mean() if 'Padlock Tm' in df_res.columns else 0
-        st.metric("Avg. Padlock Tm", f"{avg_tm:.2f} °C")
-    with col3:
-        avg_dg = df_res['Padlock ΔG (kcal/mol)'].mean() if 'Padlock ΔG (kcal/mol)' in df_res.columns else 0
-        st.metric("Avg. Delta G", f"{avg_dg:.2f} kcal/mol")
 
-    # DataFrame
-    st.caption("Ranked by Penalty Score (lower = better). Warning flags an over-structured 5-prime arm or Cas12a zone.")
-    st.dataframe(df_res, use_container_width=True)
-
-    # Download Button
-    # Excel conversion
-    buffer = io.BytesIO()
-    with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-        df_res.to_excel(writer, index=False, sheet_name='Padlock Candidates')
-    
-    st.download_button(
-        label="📥 Download Results as Excel",
-        data=buffer.getvalue(),
-        file_name=f"padlock_design_{target_name}.xlsx",
-        mime="application/vnd.ms-excel"
+    # ---- Results header ----
+    _tname = target_name if target_name else "target"
+    st.markdown(
+        "<div class='pd-hero' style='margin-top:6px'>"
+        f"<h1 style='font-size:1.4rem'>🎉 Design Results <span class='pd-grad'>{_tname}</span></h1>"
+        f"<p>{len(df_res)} candidate(s) · ranked by penalty score (lower = better)</p>"
+        "</div>",
+        unsafe_allow_html=True,
     )
 
+    # ---- Summary metrics ----
+    m1, m2, m3, m4 = st.columns(4)
+    with m1:
+        st.metric("Candidates", len(df_res))
+    with m2:
+        best_pen = df_res["Penalty Score"].min() if "Penalty Score" in df_res.columns else None
+        st.metric("Best Penalty", f"{best_pen:.4f}" if best_pen is not None else "—")
+    with m3:
+        avg_tm = df_res["Padlock Tm"].mean() if "Padlock Tm" in df_res.columns else 0
+        st.metric("Avg. Padlock Tm", f"{avg_tm:.1f} °C")
+    with m4:
+        avg_dg = df_res["Padlock ΔG (kcal/mol)"].mean() if "Padlock ΔG (kcal/mol)" in df_res.columns else 0
+        st.metric("Avg. ΔG", f"{avg_dg:.2f}")
+
+    # ---- Ranked table (key columns first, all data retained) ----
+    _sec("Ranked Candidates")
+    st.caption("Lower **Penalty Score** = better. **Warning** flags an over-structured 5′ arm or Cas12a zone.")
+    _preferred = [
+        "Candidate ID", "Penalty Score", "Warning", "Spacer GC%",
+        "Padlock Tm", "Padlock ΔG (kcal/mol)", "Calculated ΔG",
+        "Padlock Sequence (5'-P)", "Spacer (Pad)", "Cas12a Core (Pad)",
+        "crRNA Spacer (RNA)", "Cas12a Target on RCA (5to3)",
+    ]
+    _cols = [c for c in _preferred if c in df_res.columns] + [c for c in df_res.columns if c not in _preferred]
+    st.dataframe(df_res[_cols], use_container_width=True, hide_index=True)
+
+    # ---- Downloads ----
+    _sec("Export")
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
+        df_res.to_excel(writer, index=False, sheet_name="Padlock Candidates")
+    _dc, _dpad = st.columns([1, 2])
+    with _dc:
+        st.download_button(
+            label="📥 Results (Excel)",
+            data=buffer.getvalue(),
+            file_name=f"padlock_design_{target_name}.xlsx",
+            mime="application/vnd.ms-excel",
+            use_container_width=True,
+        )
+        if st.session_state.get("run_config"):
+            st.download_button(
+                label="🧾 Run Config (JSON)",
+                data=json.dumps(st.session_state.run_config, indent=2, ensure_ascii=False),
+                file_name=f"run_config_{target_name}.json",
+                mime="application/json",
+                use_container_width=True,
+            )
     st.caption("crRNA Spacer = Cas12a Core (as RNA); the Cas12a target on the RCA product is its reverse complement. Confirm orientation for your Cas12a variant (e.g., LbCas12a).")
 
-    if st.session_state.get("run_config"):
-        st.download_button(
-            label="🧾 Download Run Config (JSON)",
-            data=json.dumps(st.session_state.run_config, indent=2, ensure_ascii=False),
-            file_name=f"run_config_{target_name}.json",
-            mime="application/json",
+    # ---- Inspect a single candidate ----
+    _sec("Inspect Candidate")
+    st.markdown("<div class='pd-selprompt'>🔎 Select a candidate below to view its full report</div>", unsafe_allow_html=True)
+    _ids = [df_res.iloc[k].get("Candidate ID", k + 1) for k in range(len(df_res))]
+    _sel = st.selectbox(
+        "Select a candidate to view details",
+        options=list(range(len(df_res))),
+        format_func=lambda k: f"#{_ids[k]}  ·  penalty {df_res.iloc[k].get('Penalty Score', '—')}",
+        label_visibility="collapsed",
+    )
+    row = df_res.iloc[_sel]
+    padlock_seq_full = row.get("Padlock Sequence (5'-P)", "N/A")
+    structure = row.get("Secondary Structure", "")
+
+    import html as _html
+    _pen = row.get("Penalty Score", "—")
+    _warn = str(row.get("Warning", "") or "")
+    _badge = (f"<span class='pd-pick-warn'>⚠ {_warn}</span>"
+              if _warn and _warn != "OK" else "<span class='pd-pick-ok'>✓ OK</span>")
+    st.markdown(
+        "<div class='pd-pick'>"
+        "<span class='pd-pick-lead'>Viewing</span>"
+        f"<span class='pd-pick-id'>Candidate #{_ids[_sel]}</span>"
+        f"<span class='pd-pick-tag'>penalty {_pen}</span>"
+        f"{_badge}</div>",
+        unsafe_allow_html=True,
+    )
+
+    # Padlock sequence — full width, single line (no wrap avoids stray copy spaces)
+    _pad_disp = str(padlock_seq_full).replace(" ", "")
+    st.markdown(
+        "<div class='pd-detail'>"
+        "<div class='pd-pad-label'>Padlock (5′-P)</div>"
+        f"<div class='pd-pad-seq'>{_html.escape(_pad_disp)}</div>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
+    col_det1, col_det2 = st.columns([2, 1])
+    with col_det1:
+        _spacer = str(row.get("Spacer (Pad)", "N/A"))
+        _cas = str(row.get("Cas12a Core (Pad)", "N/A"))
+        _crrna = str(row.get("crRNA Spacer (RNA)", "")) if "crRNA Spacer (RNA)" in df_res.columns else ""
+        _fields = (
+            f"<div><span class='pd-k'>Spacer</span><span class='pd-v'>{_html.escape(_spacer)}</span></div>"
+            f"<div><span class='pd-k'>Cas12a Core</span><span class='pd-v'>{_html.escape(_cas)}</span></div>"
         )
+        if _crrna:
+            _fields += f"<div><span class='pd-k'>crRNA Spacer</span><span class='pd-v'>{_html.escape(_crrna)}</span></div>"
+        if structure:
+            _fields += f"<div><span class='pd-k'>Structure</span><span class='pd-v'>{_html.escape(str(structure))}</span></div>"
+        st.markdown(f"<div class='pd-fields'>{_fields}</div>", unsafe_allow_html=True)
 
-    # Detailed View Expander
-    with st.expander("🔍 Detailed Sequence View"):
-        for i, row in df_res.iterrows():
-            st.markdown(f"**#{row.get('Candidate ID', i+1)}**")
-            padlock_seq_full = row.get("Padlock Sequence (5'-P)", "N/A")
-            structure = row.get("Secondary Structure", "")
-            
-            # --- Column for main info and image ---
-            col_det1, col_det2 = st.columns([2, 1])
-            
-            with col_det1:
-                st.code(f"Padlock: {padlock_seq_full}")
-                st.text(f"Spacer: {row.get('Spacer (Pad)', 'N/A')} | Cas12a Core: {row.get('Cas12a Core (Pad)', 'N/A')}")
-                if structure:
-                    st.text(f"Structure: {structure}")
-            
-            with col_det2:
-                if structure and padlock_seq_full != "N/A":
-                    try:
-                        clean_seq = padlock_seq_full.replace("[5'-P]-", "")
-                        img_buf = plot_structure(
-                            clean_seq, 
-                            structure, 
-                            title=f"Candidate #{row.get('Candidate ID', i+1)}"
-                        )
-                        st.image(img_buf, caption="Predicted 2D Structure", use_container_width=True)
-                    except Exception as e:
-                        st.warning(f"Could not visualize structure: {e}")
+    with col_det2:
+        if structure and padlock_seq_full != "N/A":
+            try:
+                clean_seq = padlock_seq_full.replace("[5'-P]-", "")
+                img_buf = plot_structure(
+                    clean_seq,
+                    structure,
+                    title=f"Candidate #{row.get('Candidate ID', _sel + 1)}",
+                )
+                st.image(img_buf, caption="Predicted 2D Structure", use_container_width=True)
+            except Exception as e:
+                st.warning(f"Could not visualize structure: {e}")
 
-            # --- Full Analysis Report ---
-            st.markdown("---")
-            
-            # Generate and display the detailed report
-            report_str = generate_detailed_report(row)
-            st.code(report_str)
-            
-            st.markdown("---")
+    # Full analysis report
+    st.markdown("---")
+    report_str = generate_detailed_report(row)
+    import html as _html
+    import re as _re
+    _rhtml = []
+    for _ln in report_str.split("\n"):
+        _sline = _ln.strip()
+        if not _sline:
+            _rhtml.append("<div class='pd-r-gap'></div>")
+        elif "=====" in _ln:
+            _m = _re.search(r"\[(.*?)\]", _ln)
+            _title = _m.group(1).strip() if _m else _sline.replace("=", "").strip()
+            _rhtml.append(f"<div class='pd-r-head'>{_html.escape(_title)}</div>")
+        elif set(_sline) == {"-"}:
+            _rhtml.append("<div class='pd-r-rule'></div>")
+        elif _sline.startswith(">"):
+            _rhtml.append(f"<div class='pd-r-key'>{_html.escape(_sline.lstrip('> ').strip())}</div>")
+        else:
+            _txt = _sline[1:].strip() if _sline.startswith("-") else _sline
+            _icls = " pd-r-item" if _sline.startswith("-") else ""
+            if ":" in _txt:
+                _k, _v = _txt.split(":", 1)
+                _rhtml.append(
+                    f"<div class='pd-r-line{_icls}'>"
+                    f"<span class='pd-r-k'>{_html.escape(_k.strip())}</span>"
+                    f"<span class='pd-r-v'>{_html.escape(_v.strip())}</span></div>"
+                )
+            else:
+                _rhtml.append(f"<div class='pd-r-line{_icls}'>{_html.escape(_txt)}</div>")
+    st.markdown("<div class='pd-report'>" + "".join(_rhtml) + "</div>", unsafe_allow_html=True)
