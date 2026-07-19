@@ -193,7 +193,7 @@ def analyze_and_sort_padlocks(df, dg_threshold=-3.5, rnafold_path=None, progress
     if not filtered_df.empty:
         _feats = filtered_df.apply(_penalty_features, axis=1, result_type="expand")
         filtered_df["Spacer GC%"]    = _feats[0].round(1)
-        filtered_df["Penalty Score"] = _feats[1].round(3)
+        filtered_df["Penalty Score"] = _feats[1].round(4)
         filtered_df["Warning"]       = _feats[2]
         # Best first: lowest penalty; ties broken by least-folded (highest ΔG)
         sorted_df = filtered_df.sort_values(
