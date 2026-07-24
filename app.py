@@ -1,6 +1,8 @@
 import streamlit as st
 import pandas as pd
 import os
+import sys
+import random
 import io
 import time
 import json
@@ -17,7 +19,7 @@ from padlock_design.reporter import generate_detailed_report
 
 # Page Config
 st.set_page_config(
-    page_title="PadDx_miR Designer",
+    page_title="REDLock Designer",
     page_icon="🧬",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -165,6 +167,21 @@ import shutil
 
 
 def find_rnafold_path():
+    # 0. Next to the running .exe / script, and inside the PyInstaller bundle,
+    #    so a shipped RNAfold.exe is found and penalty scoring works.
+    _dirs = []
+    if getattr(sys, "frozen", False):
+        _dirs.append(os.path.dirname(sys.executable))
+        _dirs.append(getattr(sys, "_MEIPASS", ""))
+    _dirs.append(os.path.dirname(os.path.abspath(__file__)))
+    for _d in _dirs:
+        if not _d:
+            continue
+        for _n in ("RNAfold.exe", "RNAfold"):
+            for _c in (os.path.join(_d, _n), os.path.join(_d, "ViennaRNA", _n)):
+                if os.path.exists(_c):
+                    return _c
+
     # 1. Check system PATH
     path = shutil.which("RNAfold")
     if path:
@@ -191,7 +208,7 @@ with st.sidebar:
     st.markdown(
         "<div class='pd-side-head'>"
         "<span class='pd-side-dot'>🧬</span>"
-        "<div><div class='pd-side-title'>PadDx_miR</div>"
+        "<div><div class='pd-side-title'>REDLock</div>"
         "<div class='pd-side-sub'>Design Settings</div></div>"
         "</div>",
         unsafe_allow_html=True,
@@ -227,12 +244,12 @@ with st.sidebar:
             "Cas12a Core (nt)", min_value=20, max_value=24, value=20,
             help="Cas12a core length to prioritize.",
         )
-    gc_spacer = st.slider("Spacer GC (%)", 0, 100, (35, 60))
-    gc_cas = st.slider("Cas12a GC (%)", 0, 100, (35, 65))
+    gc_spacer = st.slider("Spacer GC (%)", 0, 100, (40, 60))
+    gc_cas = st.slider("Cas12a GC (%)", 0, 100, (40, 60))
     pool_samples = st.select_slider(
         "Pool Sample Size",
         options=[10000, 50000, 100000, 200000, 500000, 1000000],
-        value=200000,
+        value=500000,
         help="Random sequences per length for initial screening. Higher = more diversity, slower.",
     )
 
@@ -251,10 +268,10 @@ with st.sidebar:
     with _g2:
         random_seed = st.number_input(
             "Random seed", min_value=0, max_value=999999, value=15,
-            help="Fix for reproducible designs. Same seed + settings = same candidates.",
+            help="Seeds POOL generation (notebook used 15). Assembly offset is fixed at 0.",
         )
     dg_threshold = st.number_input(
-        "ΔG threshold (kcal/mol)", value=-3.5, step=0.5,
+        "ΔG threshold (kcal/mol)", value=-5.0, step=0.5,
         help="Stability cutoff. Higher (less negative) = less folded / better accessibility.",
     )
     with st.expander("Generation budget (advanced)", expanded=False):
@@ -276,7 +293,7 @@ with st.sidebar:
         cross_module = st.number_input("Module & Global Cross-Hyb", 3, 10, 5, help="Spacer↔Cas12a and Padlock↔module interaction.")
         cross_arm = st.number_input("miRNA-Arm Cross-Hyb", 2, 10, 4, help="Arm↔Cas12a and inner↔arm interaction (arm↔spacer fixed at 3).")
         cross_rca = st.number_input("RCA↔miRNA Cross-Hyb", 3, 12, 7, help="RCA product re-binding the original miRNA.")
-        avoid_g4 = st.checkbox("Avoid G-quadruplex (G4)", value=True, help="Reject GGG-N-GGG-N-GGG-N-GGG and its C-rich complement. G4 stalls phi29 & Cas12a.")
+        avoid_g4 = st.checkbox("Avoid G-quadruplex (G4)", value=False, help="Reject GGG-N-GGG-N-GGG-N-GGG and its C-rich complement. G4 stalls phi29 & Cas12a.")
 
     # ────────────────────────── ④ Validation ────────────────────────
     _sec("④ Validation")
@@ -301,7 +318,7 @@ with st.sidebar:
     blast_mode = st.radio(
         "BLAST Mode",
         options=["Online NCBI BLAST", "Local BLAST", "Skip BLAST"],
-        index=0,
+        index=2,
         help="How to validate candidates against off-target sequences.",
     )
     blast_target = st.number_input(
@@ -327,7 +344,7 @@ with st.sidebar:
 # Main Content
 st.markdown("""
 <div class="pd-hero">
-  <h1>🧬 Pad<span class="pd-grad">Dx</span>_miR — Padlock Design Studio</h1>
+  <h1>🧬 <span class="pd-grad">RED</span>Lock — Padlock Design Studio</h1>
   <p>Automated design pipeline for RCA-based CRISPR-Cas12a miRNA detection.</p>
 </div>
 """, unsafe_allow_html=True)
@@ -377,7 +394,10 @@ if run_btn:
                 # Force new pool generation if custom params are likely (simple heuristic: always regen for safety in GUI mode)
                 # Or use a different filename based on hash. For now, we reuse the function but pass a temp filename or None to avoid overwriting default cache if desired.
                 # Actually, overwriting is fine as it reflects user's latest choice.
-                _pool_file = f"pools_s{spacer_length[0]}_c{cas12a_length[0]}_g{gc_spacer[0]}-{gc_spacer[1]}_{gc_cas[0]}-{gc_cas[1]}_n{pool_samples}.pkl"
+                _pool_file = f"pools_s{spacer_length[0]}_c{cas12a_length[0]}_g{gc_spacer[0]}-{gc_spacer[1]}_{gc_cas[0]}-{gc_cas[1]}_n{pool_samples}_seed{random_seed}.pkl"
+                # Fix the global RNG BEFORE pool generation — exactly like the
+                # notebook's random.seed(15). The UI seed drives the POOL.
+                random.seed(random_seed)
                 spacer_pools, cas12a_pools = generate_pool(
                     spacer_length, 
                     cas12a_length, 
@@ -409,7 +429,7 @@ if run_btn:
                     spacer_pools, 
                     cas12a_pools, 
                     num_to_generate=num_candidates,
-                    seed_offset=random_seed,
+                    seed_offset=0,  # notebook used 0; UI seed drives the POOL, not this
                     validation_params=custom_validation_params,
                     max_attempts=int(max_attempts),
                     time_limit_sec=int(gen_time_min * 60),
@@ -499,7 +519,7 @@ if run_btn:
                 final_df = export_candidate_results(final_candidates_list)
                 st.session_state.results = final_df
                 st.session_state.run_config = {
-                    "tool": "PadDx_miR — Padlock Design Studio",
+                    "tool": "REDLock — Padlock Design Studio",
                     "generated": datetime.datetime.now().isoformat(timespec="seconds"),
                     "target_name": target_name,
                     "target_sequence": target_seq,
@@ -570,7 +590,14 @@ if st.session_state.results is not None:
         "crRNA Spacer (RNA)", "Cas12a Target on RCA (5to3)",
     ]
     _cols = [c for c in _preferred if c in df_res.columns] + [c for c in df_res.columns if c not in _preferred]
-    st.dataframe(df_res[_cols], use_container_width=True, hide_index=True)
+    st.dataframe(
+        df_res[_cols],
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Penalty Score": st.column_config.NumberColumn("Penalty Score", format="%.4f"),
+        },
+    )
 
     # ---- Downloads ----
     _sec("Export")
@@ -600,10 +627,15 @@ if st.session_state.results is not None:
     _sec("Inspect Candidate")
     st.markdown("<div class='pd-selprompt'>🔎 Select a candidate below to view its full report</div>", unsafe_allow_html=True)
     _ids = [df_res.iloc[k].get("Candidate ID", k + 1) for k in range(len(df_res))]
+    def _fmt_pen(v):
+        try:
+            return f"{float(v):.4f}"
+        except (TypeError, ValueError):
+            return str(v)
     _sel = st.selectbox(
         "Select a candidate to view details",
         options=list(range(len(df_res))),
-        format_func=lambda k: f"#{_ids[k]}  ·  penalty {df_res.iloc[k].get('Penalty Score', '—')}",
+        format_func=lambda k: f"#{_ids[k]}  ·  penalty {_fmt_pen(df_res.iloc[k].get('Penalty Score', '—'))}",
         label_visibility="collapsed",
     )
     row = df_res.iloc[_sel]
@@ -619,7 +651,7 @@ if st.session_state.results is not None:
         "<div class='pd-pick'>"
         "<span class='pd-pick-lead'>Viewing</span>"
         f"<span class='pd-pick-id'>Candidate #{_ids[_sel]}</span>"
-        f"<span class='pd-pick-tag'>penalty {_pen}</span>"
+        f"<span class='pd-pick-tag'>penalty {_fmt_pen(_pen)}</span>"
         f"{_badge}</div>",
         unsafe_allow_html=True,
     )

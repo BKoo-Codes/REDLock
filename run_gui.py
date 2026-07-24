@@ -23,7 +23,7 @@ def open_browser():
 
 if __name__ == "__main__":
     try:
-        print("🚀 Starting PadDx_miR Designer...")
+        print("🚀 Starting REDLock Designer...")
         app_path = resolve_path("app.py")
         
         if not os.path.exists(app_path):

@@ -145,6 +145,59 @@ def _penalty_features(row):
     return gc_pct, penalty, ("+".join(warn) if warn else "OK")
 
 
+def calc_penalty_score(row):
+    """EXACT copy of the notebook's calc_penalty_score (returns pd.Series, joined below).
+    Kept byte-for-byte identical so the sort input DataFrame is built the same way
+    as the notebook -> identical quicksort tie order."""
+    spacer  = str(row['Spacer (Pad)'])
+    cas12a  = str(row['Cas12a Core (Pad)'])
+
+    arm_len   = int(row["miRNA 5' Arm len"])
+    cas_start = arm_len + len(spacer)
+    cas_end   = cas_start + len(cas12a)
+
+    gc_pct = sum(1 for b in spacer if b in 'GC') / len(spacer) * 100 if spacer else 0
+
+    dg = row['Calculated ΔG']
+    st = str(row['Secondary Structure']).strip()
+
+    def _mpr(segment):
+        run = mx = 0; prev = ''
+        for c in segment:
+            if c in '()':
+                run = run + 1 if c == prev else 1
+                mx = max(mx, run)
+            else:
+                run = 0
+            prev = c
+        return mx
+
+    fgl = 1.0 if gc_pct < 40 else 0.0
+    fgh = 1.0 if gc_pct > 60 else 0.0
+    fdg = 1.0 / (1.0 + math.exp(2.0 * (dg - (-4.0))))
+    far = 0.0 if dg <= -5.0 else (1.0 if _mpr(st[0:arm_len]) >= 4 else 0.0)
+    fcs = 0.0 if dg <= -5.0 else (1.0 if _mpr(st[cas_start:cas_end]) >= 6 else 0.0)
+
+    W = {'w_gc_low':4.176,'w_gc_high':2.453,'w_dg':3.026,'w_arm':5.172,'w_cas':2.854}
+    penalty = (W['w_gc_low']*fgl + W['w_gc_high']*fgh + W['w_dg']*fdg +
+               W['w_arm']*far + W['w_cas']*fcs)
+
+    warn = []
+    if far == 1: warn.append('arm')
+    if fcs == 1: warn.append('cas')
+
+    return pd.Series({
+        'Spacer GC%'    : round(gc_pct, 1),
+        'f_gc_low'      : fgl,
+        'f_gc_high'     : fgh,
+        'f_dg'          : fdg,
+        'f_arm'         : far,
+        'f_cas'         : fcs,
+        'Penalty Score' : penalty,
+        'Warning'       : '+'.join(warn) if warn else 'OK',
+    })
+
+
 def analyze_and_sort_padlocks(df, dg_threshold=-3.5, rnafold_path=None, progress_cb=None):
     """
     Analyzes sequences and filters out candidates with ΔG <= threshold (too stable).
@@ -189,16 +242,13 @@ def analyze_and_sort_padlocks(df, dg_threshold=-3.5, rnafold_path=None, progress
     filtered_df = df[df['Calculated ΔG'] > dg_threshold].copy()
     rejected_count = initial_count - len(filtered_df)
     
-    # ===== Multi-feature penalty scoring (accessibility-aware ranking) =====
+    # ===== Penalty scoring & sorting — EXACT notebook reproduction =====
+    # Built identically to the notebook (join of a Series-returning apply, then a
+    # plain sort_values with no kind=), so the quicksort tie order matches the
+    # notebook byte-for-byte instead of diverging (14 vs 27).
     if not filtered_df.empty:
-        _feats = filtered_df.apply(_penalty_features, axis=1, result_type="expand")
-        filtered_df["Spacer GC%"]    = _feats[0].round(1)
-        filtered_df["Penalty Score"] = _feats[1].round(4)
-        filtered_df["Warning"]       = _feats[2]
-        # Best first: lowest penalty; ties broken by least-folded (highest ΔG)
-        sorted_df = filtered_df.sort_values(
-            by=["Penalty Score", "Calculated ΔG"], ascending=[True, False]
-        ).reset_index(drop=True)
+        scored_df = filtered_df.join(filtered_df.apply(calc_penalty_score, axis=1))
+        sorted_df = scored_df.sort_values(by='Penalty Score', ascending=True).reset_index(drop=True)
     else:
         sorted_df = filtered_df
     
@@ -304,33 +354,54 @@ def _run_local_blastn_and_parse(query_seq, label, blast_exe_path, blast_db_path,
 
 # NCBI BLAST Functions
 def classify_hit(title):
-    if "PREDICTED" in title: return "Other"
-    return "RNA" # Simplified for this context
+    import re as _re
+    if _re.search(r"\b(NM_|NR_|XM_|XR_)", title):
+        return "RNA"
+    elif _re.search(r"\b(NC_|NG_|AC_|AP_|AL_|CHR)", title):
+        return "Genomic"
+    else:
+        return "Other"
 
 def check_contiguous_match(query, subject, min_match=15):
-    # Simplified check logic
-    return False 
+    max_run, run = 0, 0
+    for q, s in zip(query, subject):
+        if q == s:
+            run += 1
+            max_run = max(max_run, run)
+        else:
+            run = 0
+    return max_run >= min_match
 
 def check_3prime_match(query, subject, min_3p=12):
-    # Simplified check logic
-    return False
+    return query[-min_3p:] == subject[-min_3p:]
 
 def run_blastn_and_parse(query_seq, label, db="refseq_rna", expect=100, word_size=7, hitlist_size=20, min_ident=0.90):
     """NCBI BLAST 실행 후 결과 파싱"""
     print(f"\n--- [{label}] | DB: {db}, txid9606[ORGN] ---")
     print("Query sequence:", query_seq)
 
-    try:
-        result_handle = NCBIWWW.qblast("blastn", db, query_seq,
-                                       entrez_query="txid9606[ORGN]",
-                                       expect=expect,
-                                       word_size=word_size,
-                                       hitlist_size=hitlist_size)
-        blast_record = NCBIXML.read(result_handle)
-        result_handle.close()
-    except Exception as e:
-        print(f"[ERROR] BLAST failed: {e}")
-        return {"perfect": {}, "partial": {}, "contig": {}, "3prime": {}} # Return empty on failure
+    blast_record = None
+    max_retries = 3  # 최초 1회 + 재시도 2회
+    for attempt in range(1, max_retries + 1):
+        try:
+            result_handle = NCBIWWW.qblast("blastn", db, query_seq,
+                                           entrez_query="txid9606[ORGN]",
+                                           expect=expect,
+                                           word_size=word_size,
+                                           hitlist_size=hitlist_size)
+            blast_record = NCBIXML.read(result_handle)
+            result_handle.close()
+            break  # 성공하면 루프 탈출
+        except Exception as e:
+            print(f"[WARN] BLAST attempt {attempt}/{max_retries} failed: {e}")
+            if attempt < max_retries:
+                print("       Try again in 10 seconds...")
+                time.sleep(10)
+            else:
+                print(f"[ERROR] BLAST failed after {max_retries} attempts. "
+                      f"Candidate will be REJECTED (unverified).")
+                # None을 반환 -> evaluate_candidate_safety가 '판정불가 = 탈락'으로 처리
+                return None
 
     hits = {"perfect": {"RNA": [], "Genomic": [], "Other": []},
             "partial": {"RNA": [], "Genomic": [], "Other": []},
@@ -339,32 +410,35 @@ def run_blastn_and_parse(query_seq, label, db="refseq_rna", expect=100, word_siz
 
     for alignment in blast_record.alignments:
         for hsp in alignment.hsps:
-            # Simple logic replication from notebook
-            cat = "RNA" 
-            
-            # 완전 일치
+            subj = hsp.sbjct
+            cat = classify_hit(alignment.title)
+
+            # 1. Perfect Match Check
             if hsp.identities == len(query_seq) and hsp.align_length == len(query_seq):
                 hits["perfect"][cat].append(alignment.title)
 
-            # 부분 일치 (90~99%)
-            if hsp.align_length > 0:
-                identity_ratio = hsp.identities / hsp.align_length
-                if min_ident <= identity_ratio < 1.0 and hsp.align_length >= int(min_ident * len(query_seq)):
-                    hits["partial"][cat].append(
-                        f"{alignment.title} (identity={identity_ratio:.2f}, mismatches={hsp.align_length-hsp.identities})"
-                    )
-            
-            # Logic for contig and 3prime would need actual sequence alignment analysis which is complex to fully replicate without the helper functions in the notebook if they were custom.
-            # Assuming basic check logic from notebook context:
-            # Note: The notebook didn't fully define check_contiguous_match/check_3prime_match in the snippet provided in `run_blastn_and_parse` context, 
-            # but they were called. I will implement basic versions or placeholders if they are not in imports.
-            # Actually, looking at the notebook, they seem to be assumed or imported from somewhere not shown or defined in previous cells not fully visible.
-            # I will assume they are helpers I need to implement or they were just local functions.
-            # For now, I'll stick to a robust basic implementation.
+            # 2. Partial Match Check (High Identity > 90%)
+            identity_ratio = hsp.identities / hsp.align_length if hsp.align_length > 0 else 0
+            if min_ident <= identity_ratio < 1.0 and hsp.align_length >= int(min_ident * len(query_seq)):
+                hits["partial"][cat].append(
+                    f"{alignment.title} (identity={identity_ratio:.2f}, mismatches={hsp.align_length-hsp.identities})"
+                )
+
+            # 3. Contiguous Match Check (Consecutive 15nt)
+            if check_contiguous_match(hsp.query, subj, min_match=15):
+                hits["contig"][cat].append(alignment.title)
+
+            # 4. 3' Terminal Match (3' end 13nt)
+            if check_3prime_match(query_seq, subj, min_3p=13):
+                hits["3prime"][cat].append(alignment.title)
 
     return hits
 
 def evaluate_candidate_safety(hits):
+    # BLAST가 재시도 끝에 실패하면 hits=None -> 검증 불가 -> 안전하지 않음(탈락)으로 처리
+    if hits is None:
+        return False, ["BLAST UNVERIFIED (network failure after retries)"]
+
     reasons = []
     
     # 1. Perfect Match Check
@@ -377,8 +451,15 @@ def evaluate_candidate_safety(hits):
         if hits["partial"][cat]:
             reasons.append(f"HIGH IDENTITY PARTIAL MATCH (>90%) IN {cat}")
 
-    # 3. Contiguous Match Check (Consecutive 15nt) - Skipped in this simplified version if data not available
-    # 4. 3' Terminal Match - Skipped in this simplified version if data not available
+    # 3. Contiguous Match Check (Consecutive 15nt)
+    for cat in hits["contig"]:
+        if hits["contig"][cat]:
+            reasons.append(f"CONTIGUOUS MATCH (>= 15nt) IN {cat}")
+
+    # 4. 3' Terminal Match (3' end 13nt)
+    for cat in hits["3prime"]:
+        if hits["3prime"][cat]:
+            reasons.append(f"Critical: 3' terminal match >= 13nt in {cat}")
 
     is_safe = len(reasons) == 0
     return is_safe, reasons
