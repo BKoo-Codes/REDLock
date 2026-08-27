@@ -15,7 +15,7 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
 
     - name: Set up Python
       uses: actions/setup-python@v5
@@ -30,19 +30,13 @@ jobs:
 
     - name: Build Executable with PyInstaller
       run: |
-        pyinstaller --onefile --collect-all streamlit --collect-all altair --collect-all pandas --collect-all Bio --collect-all matplotlib --hidden-import=Bio --hidden-import=Bio.Seq --add-data "app.py;." --add-data "padlock_design;padlock_design" --add-data ".streamlit;.streamlit" --name REDLock_Tool --clean run_gui.py
+        pyinstaller --onefile --collect-all streamlit --collect-all altair --collect-all pandas --collect-all Bio --collect-all matplotlib --hidden-import=Bio --hidden-import=Bio.Seq --add-data "app.py;." --add-data "padlock_design;padlock_design" --add-data ".streamlit;.streamlit" --name SPOT_Tool --clean run_gui.py
 
-    # Temporary copy for quick testing (auto-deletes after 7 days) — optional
-    - name: Upload test artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: REDLock_Tool_Windows
-        path: dist/REDLock_Tool.exe
-        retention-days: 7
-
-    # Permanent download link — only runs when a version tag triggered the workflow
+    # Permanent download link — only runs when a version tag (vX.Y.Z) triggered the workflow.
+    # The .exe is attached directly to the GitHub Release, which does NOT count against
+    # the small Actions "artifact" storage quota, so this never hits the quota error.
     - name: Publish to Release (never expires)
       if: startsWith(github.ref, 'refs/tags/')
       uses: softprops/action-gh-release@v2
       with:
-        files: dist/REDLock_Tool.exe
+        files: dist/SPOT_Tool.exe
