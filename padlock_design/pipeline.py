@@ -304,7 +304,7 @@ def _run_local_blastn_and_parse(query_seq, label, blast_exe_path, blast_db_path,
         "-db", blast_db_path,
         "-outfmt", "5",  # XML output
         "-out", output_file_name,
-        "-expect", str(expect),
+        "-evalue", str(expect),  # command-line blastn uses -evalue (NOT -expect, which is the Biopython/qblast name)
         "-word_size", str(word_size),
         "-max_target_seqs", str(hitlist_size),
         "-task", "blastn-short" # Good for short sequences like oligos
