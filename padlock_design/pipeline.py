@@ -267,7 +267,7 @@ def _run_local_blastn_and_parse(query_seq, label, blast_exe_path, blast_db_path,
     """
     if not os.path.exists(blast_exe_path):
         print(f"[ERROR] Local BLAST executable not found at: {blast_exe_path}")
-        return {"perfect": {}, "partial": {}, "contig": {}, "3prime": {}}
+        return None  # unverified -> reject (never pass a candidate we could not screen)
     
     # Check if blast_db_path is a directory or a file. For local blast, it expects
     # the base name of the database, not necessarily the path to a .nhr/.nin/.nsq file.
@@ -280,7 +280,7 @@ def _run_local_blastn_and_parse(query_seq, label, blast_exe_path, blast_db_path,
     
     if not db_exists:
         print(f"[ERROR] Local BLAST database not found at: {blast_db_path}. Expecting files like {blast_db_path}.nhr, etc.")
-        return {"perfect": {}, "partial": {}, "contig": {}, "3prime": {}}
+        return None  # unverified -> reject (never pass a candidate we could not screen)
 
     print(f"\n--- [{label}] | DB: {blast_db_path} (Local) ---")
     print("Query sequence:", query_seq)
@@ -325,26 +325,39 @@ def _run_local_blastn_and_parse(query_seq, label, blast_exe_path, blast_db_path,
             blast_record = NCBIXML.read(io.StringIO(blast_output))
             for alignment in blast_record.alignments:
                 for hsp in alignment.hsps: # Corrected from blast_record.hsps
-                    cat = "RNA" # Simplified, could be improved with actual classification (e.g., from alignment.title)
+                    subj = hsp.sbjct
+                    cat = classify_hit(alignment.title)  # same RNA/Genomic/Other classification as online
 
-                    # Perfect Match
+                    # 1. Perfect Match
                     if hsp.identities == len(query_seq) and hsp.align_length == len(query_seq):
                         hits["perfect"][cat].append(alignment.title)
 
-                    # Partial Match (High Identity > min_ident)
-                    if hsp.align_length > 0:
-                        identity_ratio = hsp.identities / hsp.align_length
-                        if min_ident <= identity_ratio < 1.0:
-                            hits["partial"][cat].append(
-                                f"{alignment.title} (identity={identity_ratio:.2f}, mismatches={hsp.align_length-hsp.identities})"
-                            )
+                    # 2. Partial Match (High Identity >= min_ident, with coverage) -- matches online
+                    identity_ratio = hsp.identities / hsp.align_length if hsp.align_length > 0 else 0
+                    if min_ident <= identity_ratio < 1.0 and hsp.align_length >= int(min_ident * len(query_seq)):
+                        hits["partial"][cat].append(
+                            f"{alignment.title} (identity={identity_ratio:.2f}, mismatches={hsp.align_length-hsp.identities})"
+                        )
+
+                    # 3. Contiguous Match Check (consecutive >= 15 nt) -- was MISSING in local
+                    if check_contiguous_match(hsp.query, subj, min_match=15):
+                        hits["contig"][cat].append(alignment.title)
+
+                    # 4. 3' Terminal Match (3' end >= 13 nt) -- was MISSING in local
+                    if check_3prime_match(query_seq, subj, min_3p=13):
+                        hits["3prime"][cat].append(alignment.title)
     except subprocess.CalledProcessError as e:
         print(f"[ERROR] Local BLAST command failed: {e.stderr}")
+        print("[ERROR] Candidate will be REJECTED (unverified).")
+        return None  # unverified -> evaluate_candidate_safety treats as unsafe (reject)
     except Exception as e:
         print(f"[ERROR] Local BLAST execution or parsing failed: {e}")
+        print("[ERROR] Candidate will be REJECTED (unverified).")
+        return None  # unverified -> reject, never silently pass
     finally:
         # Clean up temporary files
-        os.remove(query_file_name)
+        if os.path.exists(query_file_name):
+            os.remove(query_file_name)
         if os.path.exists(output_file_name): # Output file might not be created if subprocess fails early
             os.remove(output_file_name)
 
@@ -375,29 +388,44 @@ def check_contiguous_match(query, subject, min_match=15):
 def check_3prime_match(query, subject, min_3p=12):
     return query[-min_3p:] == subject[-min_3p:]
 
-def run_blastn_and_parse(query_seq, label, db="refseq_rna", expect=100, word_size=7, hitlist_size=20, min_ident=0.90):
+def run_blastn_and_parse(query_seq, label, db="refseq_rna", expect=100, word_size=7, hitlist_size=20, min_ident=0.90, status_cb=None):
     """NCBI BLAST 실행 후 결과 파싱"""
     print(f"\n--- [{label}] | DB: {db}, txid9606[ORGN] ---")
     print("Query sequence:", query_seq)
 
+    def _say(msg):
+        # surface a human-readable status to the UI (best-effort)
+        if status_cb is not None:
+            try:
+                status_cb(msg)
+            except Exception:
+                pass
+
     blast_record = None
     max_retries = 3  # 최초 1회 + 재시도 2회
     for attempt in range(1, max_retries + 1):
+        t0 = time.time()
         try:
+            _say(f"[{label}] contacting NCBI BLAST (attempt {attempt}/{max_retries}) — "
+                 f"this usually takes 30–90 s per query, please wait…")
             result_handle = NCBIWWW.qblast("blastn", db, query_seq,
                                            entrez_query="txid9606[ORGN]",
                                            expect=expect,
                                            word_size=word_size,
                                            hitlist_size=hitlist_size)
+            _say(f"[{label}] response received after {time.time()-t0:.0f} s — parsing…")
             blast_record = NCBIXML.read(result_handle)
             result_handle.close()
             break  # 성공하면 루프 탈출
         except Exception as e:
             print(f"[WARN] BLAST attempt {attempt}/{max_retries} failed: {e}")
             if attempt < max_retries:
+                _say(f"[{label}] network issue after {time.time()-t0:.0f} s "
+                     f"(attempt {attempt}/{max_retries}); retrying in 10 s…")
                 print("       Try again in 10 seconds...")
                 time.sleep(10)
             else:
+                _say(f"[{label}] BLAST failed after {max_retries} attempts — candidate rejected (unverified).")
                 print(f"[ERROR] BLAST failed after {max_retries} attempts. "
                       f"Candidate will be REJECTED (unverified).")
                 # None을 반환 -> evaluate_candidate_safety가 '판정불가 = 탈락'으로 처리
@@ -464,11 +492,18 @@ def evaluate_candidate_safety(hits):
     is_safe = len(reasons) == 0
     return is_safe, reasons
 
-def run_blast_validation(sorted_results, target_count=5, blast_mode="Online NCBI BLAST", blast_exe_path="", blast_db_path="", progress_cb=None):
+def run_blast_validation(sorted_results, target_count=5, blast_mode="Online NCBI BLAST", blast_exe_path="", blast_db_path="", progress_cb=None, status_cb=None):
     passed_candidates = []
     total = len(sorted_results)
     screened = 0
-    
+
+    def _say(msg):
+        if status_cb is not None:
+            try:
+                status_cb(msg)
+            except Exception:
+                pass
+
     for idx, row in sorted_results.iterrows():
         candidate_id = row.get('Candidate ID', idx + 1)
         screened += 1
@@ -479,7 +514,7 @@ def run_blast_validation(sorted_results, target_count=5, blast_mode="Online NCBI
         # Determine which BLAST function to use
         blast_func = None
         if blast_mode == "Online NCBI BLAST":
-            blast_func = run_blastn_and_parse
+            blast_func = lambda query_seq, label: run_blastn_and_parse(query_seq, label, status_cb=status_cb)
             print_msg = "Online NCBI BLAST"
         elif blast_mode == "Local BLAST":
             # Add a basic check for local BLAST path existence before passing the lambda
@@ -503,22 +538,30 @@ def run_blast_validation(sorted_results, target_count=5, blast_mode="Online NCBI
         # STEP 1: Validate CAS12A Core first
         cas_name = f"CAS12A_CORE_#{candidate_id}"
         cas_seq = row['Cas12a Core (Pad)']
-        
+
+        _say(f"Candidate #{candidate_id} (screened {screened}/{total}, passed {len(passed_candidates)}/{target_count}) "
+             f"· STEP 1/2: Cas12a core · {print_msg}…")
         print(f"▶ STEP 1: Running {print_msg} for {cas_name}...")
+        _t = time.time()
         cas_hits = blast_func(cas_seq, cas_name)
+        _say(f"Candidate #{candidate_id} · STEP 1/2 done in {time.time()-_t:.0f} s")
         is_cas_safe, cas_reasons = evaluate_candidate_safety(cas_hits)
 
         if not is_cas_safe:
             print(f"\n[REJECTED] CANDIDATE #{candidate_id} FAILED AT CAS12A VALIDATION.")
             print(f"   - REASON(S): {', '.join(cas_reasons)}")
+            _say(f"Candidate #{candidate_id} rejected at STEP 1 ({', '.join(cas_reasons)})")
             continue 
 
         # STEP 2: Validate SPACER Core only if CAS12A passed
         spacer_name = f"SPACER_#{candidate_id}"
         spacer_seq = row['Spacer (Pad)']
-        
+
+        _say(f"Candidate #{candidate_id} · STEP 2/2: Spacer · {print_msg}…")
         print(f"▶ STEP 2: Running {print_msg} for {spacer_name}...")
+        _t = time.time()
         spacer_hits = blast_func(spacer_seq, spacer_name)
+        _say(f"Candidate #{candidate_id} · STEP 2/2 done in {time.time()-_t:.0f} s")
         is_spacer_safe, spacer_reasons = evaluate_candidate_safety(spacer_hits)
 
         if not is_spacer_safe:

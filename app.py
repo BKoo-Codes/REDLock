@@ -480,13 +480,23 @@ if run_btn:
             final_candidates_list = []
             if blast_mode != "Skip BLAST":
                 st.write(f"Running {blast_mode} validation — screening top-ranked candidates until {blast_target} pass...")
+                if blast_mode == "Online NCBI BLAST":
+                    st.caption("⏳ Online NCBI BLAST is a remote query and can take ~30–90 s per module "
+                               "(two per candidate). The status line below updates at each step so you can "
+                               "tell it is still running.")
                 _bbar = st.progress(0.0)
                 _bmsg = st.empty()
+                _bstat = st.empty()
                 def _blast_progress(screened, total, passed, target):
                     try:
                         frac = min(passed / target, 1.0) if target else (screened / total if total else 0.0)
                         _bbar.progress(frac)
                         _bmsg.markdown(f"BLAST screening **{screened}/{total}** · passed **{passed}/{target}**")
+                    except Exception:
+                        pass
+                def _blast_status(msg):
+                    try:
+                        _bstat.info(f"🔎 {msg}")
                     except Exception:
                         pass
                 
@@ -496,7 +506,8 @@ if run_btn:
                     blast_mode=blast_mode,
                     blast_exe_path=blast_exe_path,
                     blast_db_path=blast_db_path,
-                    progress_cb=_blast_progress
+                    progress_cb=_blast_progress,
+                    status_cb=_blast_status
                 )
                 _bbar.progress(1.0)
                 
