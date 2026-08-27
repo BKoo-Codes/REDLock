@@ -30,7 +30,7 @@ jobs:
 
     - name: Build Executable with PyInstaller
       run: |
-        pyinstaller --onefile --collect-all streamlit --collect-all altair --collect-all pandas --collect-all Bio --collect-all matplotlib --hidden-import=Bio --hidden-import=Bio.Seq --add-data "app.py;." --add-data "padlock_design;padlock_design" --add-data ".streamlit;.streamlit" --name SPOT_Tool --clean run_gui.py
+        pyinstaller --onefile --collect-all streamlit --collect-all altair --collect-all pandas --collect-all Bio --collect-all matplotlib --hidden-import=Bio --hidden-import=Bio.Seq --add-data "app.py;." --add-data "padlock_design;padlock_design" --add-data ".streamlit;.streamlit" --name REDLock_Tool --clean run_gui.py
 
     # Permanent download link — only runs when a version tag (vX.Y.Z) triggered the workflow.
     # The .exe is attached directly to the GitHub Release, which does NOT count against
@@ -39,4 +39,4 @@ jobs:
       if: startsWith(github.ref, 'refs/tags/')
       uses: softprops/action-gh-release@v2
       with:
-        files: dist/SPOT_Tool.exe
+        files: dist/REDLock_Tool.exe
