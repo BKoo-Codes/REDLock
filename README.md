@@ -127,6 +127,8 @@ You can package this tool into a single executable file that runs without instal
 | `--pool_samples` | `500000` | Random samples per pool length |
 | `--blast_count` | `5` | Number of candidates to keep after BLAST validation |
 | `--pool_file` | auto | Pool cache file. Defaults to a name derived from the pool parameters |
+| `--cas12a_tm_min` | `45.0` | Minimum Cas12a core Tm (°C) |
+| `--cas12a_tm_max` | `63.0` | Maximum Cas12a core Tm (°C) |
 
 
 ## Website

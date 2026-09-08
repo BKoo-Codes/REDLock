@@ -14,8 +14,8 @@ from padlock_design.pipeline import (
     run_blast_validation,
     export_candidate_results,
     RNAfoldError,
-    RNAfoldNotFoundError,
 )
+from padlock_design.thermo import set_rnafold_path
 from padlock_design.visualization import plot_structure
 from padlock_design.reporter import generate_detailed_report
 
@@ -157,13 +157,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Helper function to parse list inputs
-def parse_int_list(input_str, default):
-    try:
-        return [int(x.strip()) for x in input_str.split(',')]
-    except:
-        return default
-
 # Sidebar - Configuration
 import shutil
 
@@ -238,7 +231,7 @@ with st.sidebar:
     _c1, _c2 = st.columns(2)
     with _c1:
         spacer_length_single = st.number_input(
-            "Spacer (nt)", min_value=0, max_value=30, value=10,
+            "Spacer (nt)", min_value=4, max_value=30, value=10,
             help="Spacer length to prioritize. Optimized default: 10.",
         )
     with _c2:
@@ -252,8 +245,18 @@ with st.sidebar:
         "Pool Sample Size",
         options=[10000, 50000, 100000, 200000, 500000, 1000000],
         value=500000,
-        help="Random sequences per length for initial screening. Higher = more diversity, slower.",
+        help="Random sequences per length for initial screening. Higher = more diversity, slower. "
+             "Only applies to lengths above 10 nt.",
     )
+    # Lengths <= 10 nt are enumerated exhaustively (all 4^L sequences), so the
+    # sample size genuinely has no effect there. Say so rather than letting the
+    # slider look like it is doing something.
+    if int(spacer_length_single) <= 10:
+        st.caption(
+            f"ℹ️ Spacer is {int(spacer_length_single)} nt → **all {4 ** int(spacer_length_single):,} "
+            "sequences** are enumerated exhaustively; Pool Sample Size applies to the "
+            f"{int(cas12a_length_single)} nt Cas12a core only."
+        )
 
     # ────────────────────────── ③ Generation ────────────────────────
     _sec("③ Generation")
@@ -293,8 +296,19 @@ with st.sidebar:
         sc_module = st.number_input("Module Hairpin (Spacer/Cas)", 3, 10, 5, help="Min self-complementary match within Spacer or Cas12a core.")
         st.markdown("**Cross-Hybridization**")
         cross_module = st.number_input("Module & Global Cross-Hyb", 3, 10, 5, help="Spacer↔Cas12a and Padlock↔module interaction.")
-        cross_arm = st.number_input("miRNA-Arm Cross-Hyb", 2, 10, 4, help="Arm↔Cas12a and inner↔arm interaction (arm↔spacer fixed at 3).")
+        cross_arm = st.number_input("miRNA-Arm Cross-Hyb", 2, 10, 4, help="Applies to all four miRNA-arm rules: arm↔spacer, arm↔Cas12a, and inner↔arm (both arms).")
         cross_rca = st.number_input("RCA↔miRNA Cross-Hyb", 3, 12, 7, help="RCA product re-binding the original miRNA.")
+        st.markdown("**Cas12a Core Thermodynamics**")
+        cas_tm_range = st.slider(
+            "Cas12a Core Tm (°C)", 30, 80, (45, 63),
+            help="Tm window for Cas12a core candidates (nearest-neighbour, RCA buffer). "
+                 "Was previously fixed at 45–63 °C.",
+        )
+        st.caption(
+            "⚠️ The 63 °C ceiling sits below the median Tm at every core length, so it "
+            "drives pool size more than the GC range does: at GC 40–60% it keeps ~39% of "
+            "20 nt cores but only ~3% of 24 nt cores. Widen it if longer cores yield too few candidates."
+        )
         avoid_g4 = st.checkbox("Avoid G-quadruplex (G4)", value=False, help="Reject GGG-N-GGG-N-GGG-N-GGG and its C-rich complement. G4 stalls phi29 & Cas12a.")
 
     # ────────────────────────── ④ Validation ────────────────────────
@@ -360,6 +374,10 @@ if run_btn:
     _rnafold_ok = bool(rnafold_path.strip()) and (
         os.path.exists(rnafold_path.strip()) or bool(shutil.which(rnafold_path.strip()))
     )
+    _local_blast_ok = blast_mode != "Local BLAST" or (
+        bool(blast_exe_path.strip()) and os.path.exists(blast_exe_path.strip())
+        and any(os.path.exists(blast_db_path.strip() + ext) for ext in (".nhr", ".nin", ".nsq"))
+    )
     if not target_name or not target_seq:
         st.error("Please enter both Target miRNA Name and Sequence.")
     elif not _rnafold_ok:
@@ -369,6 +387,14 @@ if run_btn:
             "RNAfold not available — cannot compute folding ΔG. Install ViennaRNA "
             "(https://www.tbi.univie.ac.at/RNA/) or enter a valid path in "
             "**④ Validation → RNAfold Path**, then run again."
+        )
+    elif not _local_blast_ok:
+        # Previously every candidate was skipped one by one and the run ended
+        # with a misleading "No candidates passed BLAST validation".
+        st.error(
+            "Local BLAST is selected but the executable or database path is invalid. "
+            "Check **blastn** and the database base name (the folder should contain "
+            "`<name>.nhr` / `.nin` / `.nsq`), or switch BLAST Mode."
         )
     else:
         # Parse inputs
@@ -388,7 +414,9 @@ if run_btn:
             "has_cross_hybridization(spacer, cas12a_core)": cross_module,
             "has_cross_hybridization(spacer_rc, cas12a_core)": cross_module,
 
-            "has_cross_hybridization(mirna_left_rc, spacer)": 3,
+            # All four miRNA-arm rules follow the same setting. This one used to
+            # be hard-coded to 3 while its siblings tracked the widget.
+            "has_cross_hybridization(mirna_left_rc, spacer)": cross_arm,
             "has_cross_hybridization(mirna_right_rc, cas12a_core)": cross_arm,
 
             "has_cross_hybridization(padlock_seq, spacer)": cross_module,
@@ -401,6 +429,9 @@ if run_btn:
         if avoid_g4:
             custom_validation_params["has_g_quadruplex(padlock_seq)"] = 3
 
+        # Let the report's RNAcofold call resolve from the same ViennaRNA folder.
+        set_rnafold_path(rnafold_path.strip())
+
         with st.status("Running Design Pipeline...", expanded=True) as status:
             # Step 1: Pools
             st.write(f"Generating sequence pools (Size: {pool_samples}, Spacer GC: {gc_spacer}%, Cas12a GC: {gc_cas}%)...")
@@ -409,7 +440,10 @@ if run_btn:
                 # Force new pool generation if custom params are likely (simple heuristic: always regen for safety in GUI mode)
                 # Or use a different filename based on hash. For now, we reuse the function but pass a temp filename or None to avoid overwriting default cache if desired.
                 # Actually, overwriting is fine as it reflects user's latest choice.
-                _pool_file = f"pools_s{spacer_length[0]}_c{cas12a_length[0]}_g{gc_spacer[0]}-{gc_spacer[1]}_{gc_cas[0]}-{gc_cas[1]}_n{pool_samples}_seed{random_seed}.pkl"
+                _pool_file = (f"pools_s{spacer_length[0]}_c{cas12a_length[0]}"
+                              f"_g{gc_spacer[0]}-{gc_spacer[1]}_{gc_cas[0]}-{gc_cas[1]}"
+                              f"_tm{cas_tm_range[0]}-{cas_tm_range[1]}"
+                              f"_n{pool_samples}_seed{random_seed}.pkl")
                 # Fix the global RNG BEFORE pool generation — exactly like the
                 # notebook's random.seed(15). The UI seed drives the POOL.
                 # generate_pool() re-seeds with pool_seed and records it in the
@@ -423,8 +457,22 @@ if run_btn:
                     gc_range_spacer=gc_spacer,
                     gc_range_cas=gc_cas,
                     pool_seed=int(random_seed),
+                    cas12a_tm_range=tuple(cas_tm_range),
                 )
                 st.success("✅ Sequence pools initialized.")
+                # Show what the GC / length / sample-size settings actually produced.
+                _sp_n = sum(len(v) for v in spacer_pools.values())
+                _cs_n = sum(len(v) for v in cas12a_pools.values())
+                st.caption(
+                    f"Spacer pool ({spacer_length[0]} nt, GC {gc_spacer[0]}–{gc_spacer[1]}%): "
+                    f"**{_sp_n:,}** · Cas12a pool ({cas12a_length[0]} nt, GC {gc_cas[0]}–{gc_cas[1]}%, "
+                    f"Tm {cas_tm_range[0]}–{cas_tm_range[1]} °C): **{_cs_n:,}** sequences after filtering."
+                )
+                if _sp_n == 0 or _cs_n == 0:
+                    st.error("A pool is empty — widen the GC range, change the length, "
+                             "or raise the pool sample size.")
+                    status.update(label="Empty pool", state="error")
+                    st.stop()
             except Exception as e:
                 st.error(f"Failed to generate pools: {e}")
                 status.update(label="Error in Step 1", state="error")
@@ -440,6 +488,7 @@ if run_btn:
                     _pmsg.markdown(f"Candidates **{found}/{target}** · {attempts:,} attempts · {elapsed:.0f}s")
                 except Exception:
                     pass
+            _gen_stats = {"rejected_by": {}}
             try:
                 candidates = assemble_and_filter_padlocks(
                     target_name, 
@@ -451,16 +500,41 @@ if run_btn:
                     validation_params=custom_validation_params,
                     max_attempts=int(max_attempts),
                     time_limit_sec=int(gen_time_min * 60),
-                    progress_cb=_progress
+                    progress_cb=_progress,
+                    stats=_gen_stats,
                 )
                 _pbar.progress(1.0)
                 
                 if not candidates:
-                    st.error("No valid candidates generated. Try relaxing filters (increase scores) or increasing pool size.")
+                    st.error("No valid candidates generated. Try relaxing the Advanced "
+                             "Filters (higher cutoffs = less strict) or increasing the pool size.")
+                    _top = sorted(_gen_stats.get("rejected_by", {}).items(),
+                                  key=lambda kv: kv[1], reverse=True)[:5]
+                    if _top:
+                        _tot = sum(_gen_stats["rejected_by"].values()) or 1
+                        st.markdown("**Which filter rejected the most candidates** "
+                                    "(first matching rule per attempt, so order biases the split):")
+                        st.table(pd.DataFrame(
+                            [{"Rule": k, "Rejected": v, "Share": f"{v / _tot * 100:.1f}%"}
+                             for k, v in _top]))
                     status.update(label="Failed at Assembly", state="error")
                     st.stop()
                 
                 df = pd.DataFrame(candidates)
+                if len(df) < int(num_candidates):
+                    # validate_padlocks only printed this to the console, which is
+                    # invisible in the browser.
+                    st.warning(
+                        f"⚠️ Generated **{len(df)}** of the {int(num_candidates)} requested "
+                        f"candidates — the {int(gen_time_min)} min time limit or the attempt "
+                        "budget was reached first. Raise the time limit, or relax the "
+                        "Advanced Filters, for the full count."
+                    )
+                    _top = sorted(_gen_stats.get("rejected_by", {}).items(),
+                                  key=lambda kv: kv[1], reverse=True)[:3]
+                    if _top:
+                        st.caption("Top blocking rules (first match per attempt): " +
+                                   " · ".join(f"`{k}` ({v:,})" for k, v in _top))
                 st.success(f"✅ {len(df)} candidates assembled.")
             except Exception as e:
                 st.error(f"Assembly failed: {e}")
@@ -550,7 +624,14 @@ if run_btn:
                 if isinstance(final_candidates_list[0], pd.Series):
                     final_candidates_list = [c.to_dict() for c in final_candidates_list]
                 
-                final_df = export_candidate_results(final_candidates_list)
+                # Keep the results even if the disk write fails: export_candidate_results
+                # returns None on error, which used to blank out session_state and make
+                # a successful run display nothing at all.
+                saved_df = export_candidate_results(final_candidates_list)
+                final_df = saved_df if saved_df is not None else pd.DataFrame(final_candidates_list)
+                if saved_df is None:
+                    st.warning("Could not write the Excel copy to the `results/` folder "
+                               "(read-only location?). Use the download button below instead.")
                 st.session_state.results = final_df
                 st.session_state.run_config = {
                     "tool": "REDLock — Padlock Design Studio",
@@ -562,6 +643,7 @@ if run_btn:
                     "cas12a_length": int(cas12a_length_single),
                     "gc_range_spacer": list(gc_spacer),
                     "gc_range_cas": list(gc_cas),
+                    "cas12a_tm_range": list(cas_tm_range),
                     "pool_samples": int(pool_samples),
                     "num_candidates": int(num_candidates),
                     "gen_time_min": int(gen_time_min),
@@ -570,6 +652,11 @@ if run_btn:
                     "dg_threshold": float(dg_threshold),
                     "avoid_g4": bool(avoid_g4),
                     "blast_mode": blast_mode,
+                    "rnafold_path": rnafold_path.strip(),
+                    "spacer_pool_size": int(sum(len(v) for v in spacer_pools.values())),
+                    "cas12a_pool_size": int(sum(len(v) for v in cas12a_pools.values())),
+                    "candidates_assembled": int(len(df)),
+                    "candidates_after_stability": int(len(sorted_df)),
                     "validation_params": dict(custom_validation_params),
                 }
                 status.update(label="Design Complete!", state="complete", expanded=False)
@@ -644,7 +731,7 @@ if st.session_state.results is not None:
             label="📥 Results (Excel)",
             data=buffer.getvalue(),
             file_name=f"padlock_design_{target_name}.xlsx",
-            mime="application/vnd.ms-excel",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True,
         )
         if st.session_state.get("run_config"):

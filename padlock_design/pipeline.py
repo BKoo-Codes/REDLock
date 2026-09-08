@@ -23,7 +23,7 @@ POOL_CACHE_VERSION = 2
 
 
 def _pool_fingerprint(spacer_priorities, cas12a_priorities, num_samples,
-                      gc_range_spacer, gc_range_cas, pool_seed):
+                      gc_range_spacer, gc_range_cas, pool_seed, cas12a_tm_range):
     """Identifies the exact parameter set a cached pool was built from."""
     return {
         "version":         POOL_CACHE_VERSION,
@@ -33,12 +33,13 @@ def _pool_fingerprint(spacer_priorities, cas12a_priorities, num_samples,
         "gc_range_spacer": [float(v) for v in gc_range_spacer],
         "gc_range_cas":    [float(v) for v in gc_range_cas],
         "pool_seed":       None if pool_seed is None else int(pool_seed),
+        "cas12a_tm_range": [float(v) for v in cas12a_tm_range],
     }
 
 
 def generate_pool(spacer_priorities, cas12a_priorities, pool_file="pools_by_length.pkl",
                   num_samples=500000, gc_range_spacer=(35, 60), gc_range_cas=(35, 65),
-                  pool_seed=None):
+                  pool_seed=None, cas12a_tm_range=(45, 63)):
     """
     Generate or load spacer and Cas12a pools.
 
@@ -50,9 +51,11 @@ def generate_pool(spacer_priorities, cas12a_priorities, pool_file="pools_by_leng
     Args:
         pool_seed (int, optional): If given, seeds the global RNG before pool
             generation and takes part in the cache fingerprint.
+        cas12a_tm_range (tuple): Allowed Cas12a core Tm window in °C.
     """
     fingerprint = _pool_fingerprint(spacer_priorities, cas12a_priorities,
-                                    num_samples, gc_range_spacer, gc_range_cas, pool_seed)
+                                    num_samples, gc_range_spacer, gc_range_cas,
+                                    pool_seed, cas12a_tm_range)
 
     if os.path.exists(pool_file):
         print(f"[INFO] Found pool cache {pool_file}; verifying parameters...")
@@ -72,7 +75,8 @@ def generate_pool(spacer_priorities, cas12a_priorities, pool_file="pools_by_leng
 
     print("[INFO] Generating new pools...")
     spacer_pools = {L: generate_candidates([L], num_samples=num_samples, gc_range=gc_range_spacer, detailed_filter=spacer_filter) for L in spacer_priorities}
-    cas12a_pools = {L: generate_candidates([L], num_samples=num_samples, gc_range=gc_range_cas, detailed_filter=cas12a_filter) for L in cas12a_priorities}
+    _cas_filter = lambda seq: cas12a_filter(seq, tuple(cas12a_tm_range))
+    cas12a_pools = {L: generate_candidates([L], num_samples=num_samples, gc_range=gc_range_cas, detailed_filter=_cas_filter) for L in cas12a_priorities}
 
     print("Spacer pools:", {k: len(v) for k, v in spacer_pools.items()}, "→ Total:", sum(len(v) for v in spacer_pools.values()))
     print("Cas12a pools:", {k: len(v) for k, v in cas12a_pools.items()}, "→ Total:", sum(len(v) for v in cas12a_pools.values()))
@@ -88,7 +92,7 @@ def generate_pool(spacer_priorities, cas12a_priorities, pool_file="pools_by_leng
 def assemble_and_filter_padlocks(name, seq, spacer_pools, cas12a_pools, num_to_generate=30,
                                  seed_offset=0,
                                  validation_params=None, max_attempts=1_000_000,
-                                 time_limit_sec=None, progress_cb=None):
+                                 time_limit_sec=None, progress_cb=None, stats=None):
     """
     Main pipeline: find best split and generate validated padlock candidates.
     Uses the optimized (junior) rule set by default. If validation_params is
@@ -117,7 +121,10 @@ def assemble_and_filter_padlocks(name, seq, spacer_pools, cas12a_pools, num_to_g
         "has_cross_hybridization(spacer, cas12a_core)": 5,
         "has_cross_hybridization(spacer_rc, cas12a_core)": 5,
         # 06: Cross-hybridization with miRNA arms
-        "has_cross_hybridization(mirna_left_rc, spacer)": 3,
+        # All four arm rules share one cutoff. The left-arm/spacer rule used to
+        # be pinned at 3 while its three siblings used 4, so the "arm" setting
+        # only governed part of the arm chemistry.
+        "has_cross_hybridization(mirna_left_rc, spacer)": 4,
         "has_cross_hybridization(mirna_right_rc, cas12a_core)": 4,
         # 07: Global vs. module cross-reactivity (inner-based)
         "has_cross_hybridization(padlock_seq, spacer)": 5,
@@ -141,6 +148,7 @@ def assemble_and_filter_padlocks(name, seq, spacer_pools, cas12a_pools, num_to_g
         max_attempts=max_attempts,
         time_limit_sec=time_limit_sec,
         progress_cb=progress_cb,
+        stats=stats,
     )
 
     return results
@@ -301,7 +309,12 @@ def analyze_and_sort_padlocks(df, dg_threshold=-3.5, rnafold_path=None, progress
         scored_df = filtered_df.join(filtered_df.apply(calc_penalty_score, axis=1))
         sorted_df = scored_df.sort_values(by='Penalty Score', ascending=True).reset_index(drop=True)
     else:
-        sorted_df = filtered_df
+        # Keep the column schema stable even when nothing survives, so callers can
+        # inspect the frame without a KeyError.
+        sorted_df = filtered_df.reindex(
+            columns=list(filtered_df.columns) + ['Spacer GC%', 'f_gc_low', 'f_gc_high',
+                                                 'f_dg', 'f_arm', 'f_cas',
+                                                 'Penalty Score', 'Warning'])
     
     print("-" * 85)
     print(f"Filtering complete!")
@@ -551,23 +564,30 @@ def run_blast_validation(sorted_results, target_count=5, blast_mode="Online NCBI
             blast_func = lambda query_seq, label: run_blastn_and_parse(query_seq, label, status_cb=status_cb)
             print_msg = "Online NCBI BLAST"
         elif blast_mode == "Local BLAST":
-            # Add a basic check for local BLAST path existence before passing the lambda
-            # A more robust check for database integrity would involve blastdbcmd, which is out of scope for now
-            blast_db_base_path = blast_db_path # blast_db_path is expected to be the base name for the DB, not including .nhr etc.
+            # Validate paths once, up front. The old code re-checked inside the
+            # loop and `continue`d on every candidate, so an invalid path looked
+            # exactly like "nothing passed BLAST".
+            blast_db_base_path = blast_db_path
             if not os.path.exists(blast_exe_path) or \
                (not os.path.exists(blast_db_base_path + '.nhr') and \
                 not os.path.exists(blast_db_base_path + '.nin') and \
                 not os.path.exists(blast_db_base_path + '.nsq')):
-                print(f"[ERROR] Local BLAST paths invalid for candidate {candidate_id}. Executable: {blast_exe_path}, DB: {blast_db_base_path}. Skipping local BLAST for this candidate.")
-                continue # Skip this candidate
-                
+                raise ValueError(
+                    f"Local BLAST is not usable. Executable: {blast_exe_path!r}, "
+                    f"database base name: {blast_db_base_path!r} (expected "
+                    f"{blast_db_base_path}.nhr / .nin / .nsq). Fix the paths or "
+                    "choose a different BLAST mode."
+                )
+
             blast_func = lambda query_seq, label: _run_local_blastn_and_parse(
                 query_seq, label, blast_exe_path, blast_db_path
             )
             print_msg = "Local BLAST"
-        else: # Should not happen if blast_mode is properly controlled
-            print("[ERROR] Invalid BLAST mode specified. Skipping BLAST validation.")
-            return sorted_results.to_dict('records') # Return all as passed if mode is invalid
+        else:
+            raise ValueError(
+                f"Invalid BLAST mode {blast_mode!r}. Expected 'Online NCBI BLAST', "
+                "'Local BLAST', or 'Skip BLAST'."
+            )
 
         # STEP 1: Validate CAS12A Core first
         cas_name = f"CAS12A_CORE_#{candidate_id}"

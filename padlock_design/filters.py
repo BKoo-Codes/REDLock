@@ -82,10 +82,14 @@ def spacer_filter(seq):
         is_balanced_base_win(seq, 0.1, 0.50)
     )
 
-def cas12a_filter(seq):
+def cas12a_filter(seq, tm_range=(45, 63)):
+    """Cas12a core screen. `tm_range` was a hard-coded 45–63 °C window; it is now
+    a parameter because the ceiling sits below the median Tm at every supported
+    core length, so it silently dominates pool size when the length changes."""
     pam_like = ("TTTA", "TTTC", "TTTG", "TAAA", "CAAA", "GAAA")
+    tm_min, tm_max = tm_range
     return (
-        45 <= tm_nn(seq) <= 63 and
+        tm_min <= tm_nn(seq) <= tm_max and
         not has_long_homopolymer(seq, 4) and
         not has_gc_block(seq, 4) and
         not has_self_complementarity(seq) and

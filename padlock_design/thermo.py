@@ -28,6 +28,33 @@ DNA_PARAMETERS = os.path.join(VIENNA_PATH, "misc", "dna_mathews.par")
 VIENNA_TEMP_C = 37.0    # φ29 RCA Defaults
 VIENNA_DANGLES = 2
 
+# Set by the CLI / GUI once the user's RNAfold path is known. RNAcofold (used by
+# the detailed report) normally sits in the same directory, so this lets a custom
+# ViennaRNA install be found without putting it on PATH.
+_RNAFOLD_HINT = ""
+
+
+def set_rnafold_path(path):
+    """Registers the RNAfold executable location for sibling-tool lookup."""
+    global _RNAFOLD_HINT
+    _RNAFOLD_HINT = path or ""
+
+
+def _find_vienna_tool(name):
+    """Locates a ViennaRNA tool: explicit path, PATH, then next to RNAfold."""
+    win = os.path.join(VIENNA_PATH, f"{name}.exe")
+    if os.path.isfile(win):
+        return win
+    found = which(name)
+    if found:
+        return found
+    if _RNAFOLD_HINT:
+        base = os.path.dirname(os.path.abspath(_RNAFOLD_HINT))
+        for candidate in (os.path.join(base, f"{name}.exe"), os.path.join(base, name)):
+            if os.path.isfile(candidate):
+                return candidate
+    return ""
+
 DNA_PAR_CANDIDATES = [
     os.path.join(VIENNA_PATH, "misc", "dna_mathews.par"),
     os.path.join(VIENNA_PATH, "share", "ViennaRNA", "misc", "dna_mathews.par"),
@@ -99,7 +126,9 @@ def run_rnafold_dna(seq, temp=37.0, rnafold_executable=None):
         RNAfoldNotFoundError: the executable could not be located.
         RNAfoldError: RNAfold ran but produced unusable output.
     """
-    executable = rnafold_executable if rnafold_executable else which("RNAfold")
+    executable = rnafold_executable if rnafold_executable else (
+        which("RNAfold") or _find_vienna_tool("RNAfold")
+    )
     if not executable:
         raise RNAfoldNotFoundError(
             "RNAfold executable not found. Install ViennaRNA and put RNAfold on "
@@ -172,7 +201,7 @@ def run_rnacofold(seq1, seq2, temperature=VIENNA_TEMP_C, dangles=VIENNA_DANGLES,
         tuple | float | None: (str, float) or float depending on return_structure.
     """
     # 1. Resolve executable path
-    exe = RNACOFOLD_PATH if os.path.isfile(RNACOFOLD_PATH) else which("RNAcofold")
+    exe = _find_vienna_tool("RNAcofold")
     if not exe:
         return (None, None) if return_structure else None
 

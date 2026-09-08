@@ -171,8 +171,10 @@ def assemble_padlock_candidate(spacer_pools, cas12a_pools, split_results,
 
 # ===== Validation =====
 
-def is_safe_candidate(candidate, val_params, mirna_seq):
-    """Returns True if candidate passes all thermodynamic/structural rules."""
+def first_failing_rule(candidate, val_params, mirna_seq):
+    """Returns the key of the first validation rule the candidate violates, or
+    None if it passes everything. Used to report *which* filter is blocking
+    generation instead of only that nothing was produced."""
     from . import filters as _filters
 
     left_len  = len(candidate['mirna_left_rc'])
@@ -182,7 +184,7 @@ def is_safe_candidate(candidate, val_params, mirna_seq):
     inner_ext = candidate['padlock_seq'][left_len - 3:-(right_len - 3)]
 
     if "TTT" in inner_seq:
-        return False
+        return "TTT in inner region (fixed rule)"
 
     context = {
         **candidate,
@@ -206,15 +208,21 @@ def is_safe_candidate(candidate, val_params, mirna_seq):
             continue
 
         if func_ref(*args_values, cutoff):
-            return False
+            return rule_key
 
-    return True
+    return None
+
+
+def is_safe_candidate(candidate, val_params, mirna_seq):
+    """Returns True if candidate passes all thermodynamic/structural rules."""
+    return first_failing_rule(candidate, val_params, mirna_seq) is None
 
 
 def validate_padlocks(spacer_pools, cas12a_pools, split_results, val_para,
                       NUM_PADLOCKS=10, seed_offset=0,
                       fixed_spacer=None, fixed_cas12a=None,
-                      max_attempts=1_000_000, time_limit_sec=None, progress_cb=None):
+                      max_attempts=1_000_000, time_limit_sec=None, progress_cb=None,
+                      stats=None):
     """Assembles and validates padlock candidates until NUM_PADLOCKS is reached."""
     # Fail fast: with an empty pool every attempt returns None, so the old code
     # burned the whole attempt budget / time limit before reporting anything.
@@ -234,10 +242,16 @@ def validate_padlocks(spacer_pools, cas12a_pools, split_results, val_para,
     results, seen_pairs = [], set()
     current_seed = seed_offset
     _t0 = time.time()
+    if stats is not None:
+        stats.setdefault("rejected_by", {})
+        stats.setdefault("attempts", 0)
+        stats.setdefault("stopped_by", "")
 
     for attempts in range(1, max_attempts + 1):
         if time_limit_sec is not None and (time.time() - _t0) > time_limit_sec:
             print(f"[STOP] Time limit {time_limit_sec}s reached at attempt {attempts}.")
+            if stats is not None:
+                stats["stopped_by"] = "time limit"
             break
         if progress_cb is not None and attempts % 2000 == 0:
             progress_cb(len(results), NUM_PADLOCKS, attempts, time.time() - _t0)
@@ -254,7 +268,10 @@ def validate_padlocks(spacer_pools, cas12a_pools, split_results, val_para,
             continue
         seen_pairs.add(pair_key)
 
-        if not is_safe_candidate(candidate, val_para, split_results['mirna_seq']):
+        failed_rule = first_failing_rule(candidate, val_para, split_results['mirna_seq'])
+        if failed_rule:
+            if stats is not None:
+                stats["rejected_by"][failed_rule] = stats["rejected_by"].get(failed_rule, 0) + 1
             continue
 
         p_seq = candidate['padlock_seq']
@@ -284,6 +301,13 @@ def validate_padlocks(spacer_pools, cas12a_pools, split_results, val_para,
 
         if len(results) >= NUM_PADLOCKS:
             break
+
+    if stats is not None:
+        stats["attempts"] = attempts
+        if len(results) >= NUM_PADLOCKS:
+            stats["stopped_by"] = "target reached"
+        elif not stats.get("stopped_by"):
+            stats["stopped_by"] = "attempt budget"
 
     if len(results) < NUM_PADLOCKS:
         print(f"[WARNING] Target not reached. Collected {len(results)}/{NUM_PADLOCKS}.")
