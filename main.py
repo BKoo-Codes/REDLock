@@ -2,13 +2,13 @@ import argparse
 import pandas as pd
 import os
 import sys
-import random
 from padlock_design.pipeline import (
     generate_pool,
     assemble_and_filter_padlocks,
     analyze_and_sort_padlocks,
     run_blast_validation,
     export_candidate_results,
+    RNAfoldError,
 )
 
 
@@ -29,6 +29,7 @@ def main():
     parser.add_argument("--seed_offset", type=int, default=0, help="Assembly seed start. Notebook used 0. (NOTE: this is NOT the pool seed)")
     parser.add_argument("--pool_samples", type=int, default=500000, help="Random samples per pool length")
     parser.add_argument("--blast_count", type=int, default=5, help="Number of candidates to keep after BLAST validation")
+    parser.add_argument("--pool_file", type=str, default=None, help="Pool cache file. Default: a name derived from the pool parameters")
 
     args = parser.parse_args()
 
@@ -53,25 +54,41 @@ def main():
     print(">>> Step 1: Initializing Sequence Pools...")
     spacer_length = [args.spacer_length]
     cas12a_length = [args.cas12a_length]
-    random.seed(args.pool_seed)
+    gc_range_spacer = (40, 60)
+    gc_range_cas = (40, 60)
+    # Parameter-specific cache file. The old code always used the default
+    # "pools_by_length.pkl", so re-running with a different length silently
+    # reused the previous pools. generate_pool() also verifies the fingerprint.
+    pool_file = args.pool_file or (
+        f"pools_s{args.spacer_length}_c{args.cas12a_length}"
+        f"_g{gc_range_spacer[0]}-{gc_range_spacer[1]}"
+        f"_{gc_range_cas[0]}-{gc_range_cas[1]}"
+        f"_n{args.pool_samples}_seed{args.pool_seed}.pkl"
+    )
     spacer_pools, cas12a_pools = generate_pool(
         spacer_length,
         cas12a_length,
+        pool_file=pool_file,
         num_samples=args.pool_samples,
-        gc_range_spacer=(40, 60),
-        gc_range_cas=(40, 60),
+        gc_range_spacer=gc_range_spacer,
+        gc_range_cas=gc_range_cas,
+        pool_seed=args.pool_seed,
     )
 
     # 2. Assemble and Filter  (use current signature; default rule set lives in pipeline)
     print("\n>>> Step 2: Assembling and Filtering Candidates...")
-    candidates = assemble_and_filter_padlocks(
-        args.target_name,
-        args.target_seq,
-        spacer_pools,
-        cas12a_pools,
-        num_to_generate=args.num_candidates,
-        seed_offset=args.seed_offset,
-    )
+    try:
+        candidates = assemble_and_filter_padlocks(
+            args.target_name,
+            args.target_seq,
+            spacer_pools,
+            cas12a_pools,
+            num_to_generate=args.num_candidates,
+            seed_offset=args.seed_offset,
+        )
+    except ValueError as e:
+        print(f"[ERROR] {e}")
+        sys.exit(1)
 
     if not candidates:
         print("[ERROR] No candidates generated. Check parameters.")
@@ -81,7 +98,12 @@ def main():
 
     # 3. Analyze, filter by stability, and rank by Penalty Score
     print("\n>>> Step 3: Analyzing Stability & Penalty Scoring...")
-    sorted_df = analyze_and_sort_padlocks(df, dg_threshold=args.dg_threshold, rnafold_path=args.rnafold_path)
+    try:
+        sorted_df = analyze_and_sort_padlocks(df, dg_threshold=args.dg_threshold, rnafold_path=args.rnafold_path)
+    except RNAfoldError as e:
+        print(f"[ERROR] {e}")
+        print("[ERROR] Stopping: penalty scoring is meaningless without a real folding ΔG.")
+        sys.exit(1)
 
     if sorted_df.empty:
         print("[WARNING] All candidates were rejected due to stability issues.")

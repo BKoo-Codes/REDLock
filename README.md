@@ -48,6 +48,18 @@ Personal working copy — kept for development and record-keeping.
    Without it, folding ΔG cannot be computed and the tool will stop rather than
    silently return ΔG = 0.
 
+   Folding uses ViennaRNA's DNA parameters (`dna_mathews*.par`), which ship with
+   ViennaRNA. The file is looked up automatically next to the `RNAfold`
+   executable and at the usual install locations; if yours lives elsewhere, set
+   the `VIENNA_DNA_PARAMS` environment variable to its full path.
+
+## Pool cache
+
+Spacer / Cas12a pools are cached to a `.pkl` file. The cache records the
+parameters it was built from (lengths, GC ranges, sample count, seed) and is
+reused only when all of them match the current run, so changing a setting always
+regenerates the pools instead of silently reusing stale ones.
+
 ## Usage
 
 ### Option 1: Graphical User Interface (GUI) - Recommended
@@ -114,6 +126,7 @@ You can package this tool into a single executable file that runs without instal
 | `--seed_offset` | `0` | Assembly seed start (distinct from the pool seed) |
 | `--pool_samples` | `500000` | Random samples per pool length |
 | `--blast_count` | `5` | Number of candidates to keep after BLAST validation |
+| `--pool_file` | auto | Pool cache file. Defaults to a name derived from the pool parameters |
 
 
 ## Website

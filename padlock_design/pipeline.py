@@ -1,31 +1,74 @@
 import pandas as pd
 import pickle
 import os
+import random
 import time
 import math
 import subprocess # Added for local BLAST
 import tempfile   # Added for local BLAST
 import io # Added for local BLAST XML parsing
 from Bio.Blast import NCBIWWW, NCBIXML
-from .filters import spacer_filter, cas12a_filter
+from .filters import (
+    spacer_filter,
+    cas12a_filter,
+    classify_hit,
+    check_contiguous_match,
+    check_3prime_match,
+)
 from .assembler import find_best_split, validate_padlocks, generate_candidates
 from .reporter import print_detailed_analysis, export_candidate_results, print_split_report
-from .thermo import run_rnafold_dna
+from .thermo import run_rnafold_dna, RNAfoldError, RNAfoldNotFoundError
 
-def generate_pool(spacer_priorities, cas12a_priorities, pool_file="pools_by_length.pkl", num_samples=500000, gc_range_spacer=(35,60), gc_range_cas=(35,65)):
+POOL_CACHE_VERSION = 2
+
+
+def _pool_fingerprint(spacer_priorities, cas12a_priorities, num_samples,
+                      gc_range_spacer, gc_range_cas, pool_seed):
+    """Identifies the exact parameter set a cached pool was built from."""
+    return {
+        "version":         POOL_CACHE_VERSION,
+        "spacer_lengths":  sorted(int(L) for L in spacer_priorities),
+        "cas12a_lengths":  sorted(int(L) for L in cas12a_priorities),
+        "num_samples":     int(num_samples),
+        "gc_range_spacer": [float(v) for v in gc_range_spacer],
+        "gc_range_cas":    [float(v) for v in gc_range_cas],
+        "pool_seed":       None if pool_seed is None else int(pool_seed),
+    }
+
+
+def generate_pool(spacer_priorities, cas12a_priorities, pool_file="pools_by_length.pkl",
+                  num_samples=500000, gc_range_spacer=(35, 60), gc_range_cas=(35, 65),
+                  pool_seed=None):
     """
     Generate or load spacer and Cas12a pools.
+
+    The cache file now stores the parameter fingerprint alongside the pools and
+    is only reused when every parameter matches. Previously any existing pickle
+    was loaded blindly, so changing the length or GC range and re-running (the
+    CLI always used the same default filename) silently reused the old pools.
+
+    Args:
+        pool_seed (int, optional): If given, seeds the global RNG before pool
+            generation and takes part in the cache fingerprint.
     """
-    # If custom parameters are used, we might want to skip loading from default pickle to avoid stale data,
-    # or use a hash of params for the filename. For simplicity, we just log a warning if loading.
-    
+    fingerprint = _pool_fingerprint(spacer_priorities, cas12a_priorities,
+                                    num_samples, gc_range_spacer, gc_range_cas, pool_seed)
+
     if os.path.exists(pool_file):
-        print(f"[INFO] Loading pools from {pool_file}...")
+        print(f"[INFO] Found pool cache {pool_file}; verifying parameters...")
         try:
             with open(pool_file, "rb") as f:
-                return pickle.load(f)
+                cached = pickle.load(f)
+            if (isinstance(cached, tuple) and len(cached) == 3
+                    and cached[0] == fingerprint):
+                print("[INFO] Cache matches current parameters. Loading pools.")
+                return cached[1], cached[2]
+            print("[INFO] Cache was built with different parameters. Regenerating...")
         except Exception as e:
             print(f"[WARNING] Failed to load pools: {e}. Regenerating...")
+
+    if pool_seed is not None:
+        random.seed(int(pool_seed))
 
     print("[INFO] Generating new pools...")
     spacer_pools = {L: generate_candidates([L], num_samples=num_samples, gc_range=gc_range_spacer, detailed_filter=spacer_filter) for L in spacer_priorities}
@@ -33,10 +76,10 @@ def generate_pool(spacer_priorities, cas12a_priorities, pool_file="pools_by_leng
 
     print("Spacer pools:", {k: len(v) for k, v in spacer_pools.items()}, "→ Total:", sum(len(v) for v in spacer_pools.values()))
     print("Cas12a pools:", {k: len(v) for k, v in cas12a_pools.items()}, "→ Total:", sum(len(v) for v in cas12a_pools.values()))
-    
+
     try:
         with open(pool_file, "wb") as f:
-            pickle.dump((spacer_pools, cas12a_pools), f)
+            pickle.dump((fingerprint, spacer_pools, cas12a_pools), f)
     except Exception as e:
         print(f"[ERROR] Failed to save pools: {e}")
 
@@ -219,13 +262,21 @@ def analyze_and_sort_padlocks(df, dg_threshold=-3.5, rnafold_path=None, progress
     for idx, row in df.iterrows():
         raw_seq = str(row["Padlock Sequence (5'-P)"])
         clean_seq = raw_seq.replace("[5'-P]-", "").strip()
-        
-        struct, dg = run_rnafold_dna(clean_seq, rnafold_executable=rnafold_path)
-        
-        # Ensure dg is a float for comparison
-        if not isinstance(dg, (int, float)):
-            dg = 0.0 # Default to 0.0 if RNAfold failed or returned non-numeric
-            
+
+        # No fallback to ΔG = 0.0 here: 0.0 sits above every sane stability
+        # threshold, so a missing or broken RNAfold used to let every candidate
+        # PASS with a meaningless penalty score. Stop instead.
+        try:
+            struct, dg = run_rnafold_dna(clean_seq, rnafold_executable=rnafold_path)
+        except RNAfoldNotFoundError:
+            raise
+        except RNAfoldError as e:
+            raise RNAfoldError(
+                f"Folding ΔG failed for candidate "
+                f"{row.get('Candidate ID', idx)}: {e}"
+            ) from e
+
+        dg = float(dg)
         results_struct.append(struct)
         results_dg.append(dg)
         
@@ -366,27 +417,10 @@ def _run_local_blastn_and_parse(query_seq, label, blast_exe_path, blast_db_path,
 
 
 # NCBI BLAST Functions
-def classify_hit(title):
-    import re as _re
-    if _re.search(r"\b(NM_|NR_|XM_|XR_)", title):
-        return "RNA"
-    elif _re.search(r"\b(NC_|NG_|AC_|AP_|AL_|CHR)", title):
-        return "Genomic"
-    else:
-        return "Other"
-
-def check_contiguous_match(query, subject, min_match=15):
-    max_run, run = 0, 0
-    for q, s in zip(query, subject):
-        if q == s:
-            run += 1
-            max_run = max(max_run, run)
-        else:
-            run = 0
-    return max_run >= min_match
-
-def check_3prime_match(query, subject, min_3p=12):
-    return query[-min_3p:] == subject[-min_3p:]
+# classify_hit / check_contiguous_match / check_3prime_match used to be
+# re-implemented here, byte-identical to the versions in filters.py. They are
+# now imported from filters.py at the top of this module so the online and
+# local BLAST paths can never drift apart.
 
 def run_blastn_and_parse(query_seq, label, db="refseq_rna", expect=100, word_size=7, hitlist_size=20, min_ident=0.90, status_cb=None):
     """NCBI BLAST 실행 후 결과 파싱"""

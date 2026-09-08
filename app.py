@@ -12,7 +12,9 @@ from padlock_design.pipeline import (
     assemble_and_filter_padlocks, 
     analyze_and_sort_padlocks, 
     run_blast_validation,
-    export_candidate_results
+    export_candidate_results,
+    RNAfoldError,
+    RNAfoldNotFoundError,
 )
 from padlock_design.visualization import plot_structure
 from padlock_design.reporter import generate_detailed_report
@@ -302,10 +304,12 @@ with st.sidebar:
     if detected_path:
         st.caption("✅ RNAfold auto-detected on this machine.")
     else:
-        st.caption("⚠️ RNAfold not found — ΔG will default to 0.0.")
+        st.caption("⚠️ RNAfold not found — the run will stop at the stability step. "
+                   "Install ViennaRNA or set the path below.")
     rnafold_path = st.text_input(
         "RNAfold Path", value=detected_path,
-        help="Full path to RNAfold.exe. If empty, ΔG is skipped (0.0).",
+        help="Full path to RNAfold.exe. Required: folding ΔG drives both the "
+             "stability filter and the penalty score, so the run stops if it is missing.",
     )
     if st.button("Test RNAfold Path"):
         if rnafold_path and os.path.exists(rnafold_path):
@@ -353,8 +357,19 @@ if "results" not in st.session_state:
     st.session_state.results = None
 
 if run_btn:
+    _rnafold_ok = bool(rnafold_path.strip()) and (
+        os.path.exists(rnafold_path.strip()) or bool(shutil.which(rnafold_path.strip()))
+    )
     if not target_name or not target_seq:
         st.error("Please enter both Target miRNA Name and Sequence.")
+    elif not _rnafold_ok:
+        # Pre-flight check: ΔG = 0.0 used to be substituted silently, which let
+        # every candidate pass the stability filter with a bogus penalty score.
+        st.error(
+            "RNAfold not available — cannot compute folding ΔG. Install ViennaRNA "
+            "(https://www.tbi.univie.ac.at/RNA/) or enter a valid path in "
+            "**④ Validation → RNAfold Path**, then run again."
+        )
     else:
         # Parse inputs
         spacer_length = [int(spacer_length_single)]
@@ -397,6 +412,8 @@ if run_btn:
                 _pool_file = f"pools_s{spacer_length[0]}_c{cas12a_length[0]}_g{gc_spacer[0]}-{gc_spacer[1]}_{gc_cas[0]}-{gc_cas[1]}_n{pool_samples}_seed{random_seed}.pkl"
                 # Fix the global RNG BEFORE pool generation — exactly like the
                 # notebook's random.seed(15). The UI seed drives the POOL.
+                # generate_pool() re-seeds with pool_seed and records it in the
+                # cache fingerprint, so a stale pickle can no longer be reused.
                 random.seed(random_seed)
                 spacer_pools, cas12a_pools = generate_pool(
                     spacer_length, 
@@ -404,7 +421,8 @@ if run_btn:
                     pool_file=_pool_file,  # param-specific cache: changing settings regenerates
                     num_samples=pool_samples,
                     gc_range_spacer=gc_spacer,
-                    gc_range_cas=gc_cas
+                    gc_range_cas=gc_cas,
+                    pool_seed=int(random_seed),
                 )
                 st.success("✅ Sequence pools initialized.")
             except Exception as e:
@@ -460,8 +478,7 @@ if run_btn:
                 except Exception:
                     pass
             try:
-                # Handle optional path
-                r_path = rnafold_path if rnafold_path.strip() else None
+                r_path = rnafold_path.strip() or None
                 sorted_df = analyze_and_sort_padlocks(df, dg_threshold=dg_threshold, rnafold_path=r_path, progress_cb=_stab_progress)
                 _sbar.progress(1.0)
                 
@@ -471,6 +488,12 @@ if run_btn:
                     st.stop()
                 
                 st.success(f"✅ Stability analysis complete. {len(sorted_df)} survivors.")
+            except RNAfoldError as e:
+                st.error(f"Folding ΔG could not be computed: {e}")
+                st.info("Penalty scoring depends on a real ΔG, so the run was stopped "
+                        "instead of scoring every candidate as ΔG = 0.")
+                status.update(label="Error in Step 3 (RNAfold)", state="error")
+                st.stop()
             except Exception as e:
                 st.error(f"Stability analysis failed: {e}")
                 status.update(label="Error in Step 3", state="error")

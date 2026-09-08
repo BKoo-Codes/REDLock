@@ -101,6 +101,29 @@ def generate_short_spacer(length, check_seqs):
 
 # ===== Padlock Assembly =====
 
+def _pick_from_pools(pools):
+    """Picks a random sequence from the shortest non-empty pool.
+
+    Iterates over the lengths actually present in `pools` (ascending) instead of
+    a hard-coded range. The old version scanned range(10, 25) for spacers and
+    [20, 21, 22] for Cas12a cores, so any length outside those windows — which
+    the GUI happily lets you choose — yielded no candidates at all. For the
+    default lengths (spacer 10, Cas12a 20) the pick is unchanged.
+    """
+    if not pools:
+        return None
+    for length in sorted(pools):
+        pool = pools.get(length)
+        if pool:
+            return random.choice(pool)
+    return None
+
+
+def describe_pools(pools):
+    """Human-readable '{length: count}' summary, used in error messages."""
+    return {length: len(seqs or []) for length, seqs in sorted((pools or {}).items())}
+
+
 def assemble_padlock_candidate(spacer_pools, cas12a_pools, split_results,
                                seed, fixed_spacer=None, fixed_cas12a=None):
     # Structure: [5' Arm RC] - [Spacer] - [Cas12a Core] - [Short Spacer] - [3' Arm RC]
@@ -109,19 +132,8 @@ def assemble_padlock_candidate(spacer_pools, cas12a_pools, split_results,
     mirna_left_rc  = rc(split_results['mirna_left'])
     mirna_right_rc = rc(split_results['mirna_right'])
 
-    spacer = fixed_spacer
-    if not spacer:
-        for length in range(10, 25):
-            if spacer_pools.get(length):
-                spacer = random.choice(spacer_pools[length])
-                break
-
-    cas12a_core = fixed_cas12a
-    if not cas12a_core:
-        for length in [20, 21, 22]:
-            if cas12a_pools.get(length):
-                cas12a_core = random.choice(cas12a_pools[length])
-                break
+    spacer = fixed_spacer or _pick_from_pools(spacer_pools)
+    cas12a_core = fixed_cas12a or _pick_from_pools(cas12a_pools)
 
     if not spacer or not cas12a_core:
         return None
@@ -204,6 +216,21 @@ def validate_padlocks(spacer_pools, cas12a_pools, split_results, val_para,
                       fixed_spacer=None, fixed_cas12a=None,
                       max_attempts=1_000_000, time_limit_sec=None, progress_cb=None):
     """Assembles and validates padlock candidates until NUM_PADLOCKS is reached."""
+    # Fail fast: with an empty pool every attempt returns None, so the old code
+    # burned the whole attempt budget / time limit before reporting anything.
+    if not fixed_spacer and not any(spacer_pools.values() if spacer_pools else []):
+        raise ValueError(
+            f"Spacer pool is empty (lengths: {describe_pools(spacer_pools)}). "
+            "Widen the spacer GC range, raise the pool sample size, or pick a "
+            "different spacer length."
+        )
+    if not fixed_cas12a and not any(cas12a_pools.values() if cas12a_pools else []):
+        raise ValueError(
+            f"Cas12a pool is empty (lengths: {describe_pools(cas12a_pools)}). "
+            "Widen the Cas12a GC range, raise the pool sample size, or pick a "
+            "different Cas12a core length."
+        )
+
     results, seen_pairs = [], set()
     current_seed = seed_offset
     _t0 = time.time()

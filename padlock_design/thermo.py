@@ -1,7 +1,24 @@
+import glob
 import os
 import subprocess
 import re
 from shutil import which
+
+
+class RNAfoldError(RuntimeError):
+    """Raised when folding ΔG cannot be computed.
+
+    Previously run_rnafold_dna() returned ("N/A", 0.0) on failure. Because
+    ΔG = 0.0 is *above* every sane stability threshold, a missing RNAfold made
+    every candidate silently PASS with a bogus penalty score. Failing loudly
+    matches the documented behaviour in README ("the tool will stop rather than
+    silently return ΔG = 0").
+    """
+
+
+class RNAfoldNotFoundError(RNAfoldError):
+    """RNAfold executable could not be located."""
+
 
 # ===== ViennaRNA 설정 =====
 VIENNA_PATH = r"C:\Program Files (x86)\ViennaRNA Package"
@@ -18,12 +35,50 @@ DNA_PAR_CANDIDATES = [
     r"C:\Program Files (x86)\ViennaRNA Package\Misc\dna_mathews2004.par",
 ]
 
-def _resolve_dna_par():
-    """Finds the first valid DNA parameter file path from candidates."""
+# Directories to sweep for dna_mathews*.par when none of the explicit Windows
+# candidates exist. Needed because RNAfold exits with an error when -P points at
+# a missing file — which, now that failures are no longer swallowed, would stop
+# every non-Windows run.
+_DNA_PAR_SEARCH_DIRS = [
+    "/usr/share/ViennaRNA/misc",
+    "/usr/local/share/ViennaRNA/misc",
+    "/opt/homebrew/share/ViennaRNA/misc",
+    "/opt/local/share/ViennaRNA/misc",
+]
+
+
+def _resolve_dna_par(executable=None):
+    """Finds a ViennaRNA DNA parameter file (dna_mathews*.par).
+
+    Search order: the VIENNA_DNA_PARAMS environment variable, the explicit
+    (Windows) candidates above, directories relative to the RNAfold executable,
+    then the standard Unix install locations. Returns "" when nothing is found.
+    """
+    env_path = os.environ.get("VIENNA_DNA_PARAMS", "")
+    if env_path and os.path.isfile(env_path):
+        return env_path
+
     for path in DNA_PAR_CANDIDATES:
         if os.path.isfile(path):
             return path
-    return "dna_mathews.par"
+
+    search_dirs = list(_DNA_PAR_SEARCH_DIRS)
+    if executable:
+        exe_dir = os.path.dirname(os.path.abspath(executable))
+        search_dirs[:0] = [
+            exe_dir,
+            os.path.join(exe_dir, "misc"),
+            os.path.join(exe_dir, "..", "share", "ViennaRNA", "misc"),
+            os.path.join(exe_dir, "..", "misc"),
+        ]
+    search_dirs.append(os.path.dirname(os.path.abspath(__file__)))
+
+    for directory in search_dirs:
+        for match in sorted(glob.glob(os.path.join(directory, "dna_mathews*.par"))):
+            if os.path.isfile(match):
+                return os.path.normpath(match)
+    return ""
+
 
 RESOLVED_DNA_PAR = _resolve_dna_par()
 
@@ -39,46 +94,66 @@ def run_rnafold_dna(seq, temp=37.0, rnafold_executable=None):
 
     Returns:
         tuple[str, float]: (Dot-bracket structure, MFE in kcal/mol).
-                           Returns ("N/A", 0.0) if an error occurs or executable not found.
+
+    Raises:
+        RNAfoldNotFoundError: the executable could not be located.
+        RNAfoldError: RNAfold ran but produced unusable output.
     """
     executable = rnafold_executable if rnafold_executable else which("RNAfold")
     if not executable:
-        print("[ERROR] RNAfold executable not found. Please provide path or ensure it's in PATH.")
-        return "N/A", 0.0
+        raise RNAfoldNotFoundError(
+            "RNAfold executable not found. Install ViennaRNA and put RNAfold on "
+            "your PATH, or pass an explicit path (--rnafold_path / the RNAfold "
+            "Path field in the GUI). Folding ΔG cannot be computed without it."
+        )
+    if rnafold_executable and not (os.path.isfile(executable) or which(executable)):
+        raise RNAfoldNotFoundError(f"RNAfold executable not found at: {executable}")
 
-    # Fallback for DNA_PARAMETERS if RESOLVED_DNA_PAR is not a valid file path
-    resolved_dna_par_path = RESOLVED_DNA_PAR if os.path.isfile(RESOLVED_DNA_PAR) else "dna_mathews.par"
+    # Re-resolve using the executable as a hint (handles Linux/macOS installs).
+    resolved_dna_par_path = (RESOLVED_DNA_PAR if os.path.isfile(RESOLVED_DNA_PAR)
+                             else _resolve_dna_par(executable))
+    if not resolved_dna_par_path:
+        raise RNAfoldError(
+            "ViennaRNA DNA parameter file (dna_mathews*.par) not found. DNA "
+            "parameters are required for padlock folding ΔG; pointing RNAfold at "
+            "a missing file makes it exit with an error. Set the "
+            "VIENNA_DNA_PARAMS environment variable to the file's full path."
+        )
 
     cmd = [
-            executable, 
-            "--noconv", 
-            "-P", resolved_dna_par_path, 
-            f"--temp={temp}", 
+            executable,
+            "--noconv",
+            "-P", resolved_dna_par_path,
+            f"--temp={temp}",
             f"-d{VIENNA_DANGLES}",
             "--noPS"
         ]
     
     try:
-        process = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, 
+        process = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                    stderr=subprocess.PIPE, text=True)
         stdout, stderr = process.communicate(input=seq)
-        
-        lines = stdout.strip().splitlines()
-        if len(lines) >= 2:
-            structure = lines[1].split()[0]
-            # Extract energy, robustly handle cases where split might not yield expected parts
-            energy_str = lines[1].split('(')[-1].strip(')')
-            try:
-                energy = float(energy_str)
-            except ValueError:
-                energy = 0.0 # Default to 0.0 if energy parsing fails
-            return structure, energy
-            
-    except Exception as e:
-        print(f"[ERROR] RNAfold execution failed: {e}")
-        return "N/A", 0.0
+    except OSError as e:
+        raise RNAfoldError(f"RNAfold execution failed ({executable}): {e}") from e
 
-    return "N/A", 0.0
+    if process.returncode != 0:
+        raise RNAfoldError(
+            f"RNAfold exited with code {process.returncode}: {(stderr or '').strip()}"
+        )
+
+    lines = stdout.strip().splitlines()
+    if len(lines) < 2:
+        raise RNAfoldError(
+            f"Unexpected RNAfold output for sequence of length {len(seq)}: {stdout!r}"
+        )
+
+    structure = lines[1].split()[0]
+    # Energy is the last parenthesised number on the line, e.g. "....(( ))  ( -3.20)"
+    match = re.search(r"\(\s*([-+]?\d+(?:\.\d+)?)\s*\)\s*$", lines[1])
+    if not match:
+        raise RNAfoldError(f"Could not parse MFE from RNAfold output line: {lines[1]!r}")
+
+    return structure, float(match.group(1))
 
 def run_rnacofold(seq1, seq2, temperature=VIENNA_TEMP_C, dangles=VIENNA_DANGLES, 
                   use_dna_params=True, return_structure=True):
@@ -104,7 +179,9 @@ def run_rnacofold(seq1, seq2, temperature=VIENNA_TEMP_C, dangles=VIENNA_DANGLES,
     # 2. Build command
     cmd = [exe, "-T", str(temperature), f"-d{dangles}", "--noPS"]
     if use_dna_params:
-        cmd.extend(["--noconv", "-P", RESOLVED_DNA_PAR])
+        par = RESOLVED_DNA_PAR if os.path.isfile(RESOLVED_DNA_PAR) else _resolve_dna_par(exe)
+        if par:
+            cmd.extend(["--noconv", "-P", par])
 
     # 3. Execute subprocess
     input_str = f"{seq1}&{seq2}\n"
